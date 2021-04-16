@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: lb-plndr-1
+spec:
+  selector:
+    app: nginx-plndr-1
+  ports:
+    - protocol: TCP
+      port: 80
+  type: LoadBalancer

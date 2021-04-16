@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kubevip
+  namespace: kube-system
+data:
+  cidr-default: 192.168.0.200/29
+  cidr-plunder: 192.168.0.210/29
+  cidr-testing: 192.168.0.220/29
