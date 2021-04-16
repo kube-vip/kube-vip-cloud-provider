@@ -36,7 +36,22 @@ Any service in any namespace will take an address from the global pool `cidr/ran
 
 ### Namespace pool
 
-A service will take an address based upon its namespace pool `cidr/range`-`namespace`.
+A service will take an address based upon its namespace pool `cidr/range`-`namespace`. These would look like the following:
+
+```
+$ kubectl describe configmap -n kube-system kubevip
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: plndr
+  namespace: kube-system
+data:
+  cidr-default: 192.168.0.200/29
+  cidr-development: 192.168.0.210/29
+  cidr-finance: 192.168.0.220/29
+  cidr-testing: 192.168.0.230/29
+```
 
 ## Create an IP pool using a CIDR
 
