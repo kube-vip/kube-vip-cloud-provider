@@ -39,7 +39,7 @@ Any service in any namespace will take an address from the global pool `cidr/ran
 A service will take an address based upon its namespace pool `cidr/range`-`namespace`. These would look like the following:
 
 ```
-$ kubectl describe configmap -n kube-system kubevip
+$ kubectl get configmap -n kube-system kubevip -o yaml
 
 apiVersion: v1
 kind: ConfigMap
