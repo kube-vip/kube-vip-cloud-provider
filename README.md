@@ -12,7 +12,7 @@ The `kube-vip-cloud-provider` will only implement the `loadBalancer` functionali
 - IP ranges [start address - end address]
 - Multiple pools by CIDR per namespace
 - Multiple IP ranges per namespace (handles overlapping ranges)
-- Setting of static addresses through ``--load-balancer-ip=x.x.x.x
+- Setting of static addresses through `--load-balancer-ip=x.x.x.x`
 
 ## Installing the `kube-vip-cloud-provider`
 
