@@ -1,0 +1,19 @@
+apiVersion: apps/v1 # for versions before 1.9.0 use apps/v1beta2
+kind: Deployment
+metadata:
+  name: nginx-plndr-1
+spec:
+  selector:
+    matchLabels:
+      app: nginx-plndr-1
+  replicas: 2 # tells deployment to run 2 pods matching the template
+  template:
+    metadata:
+      labels:
+        app: nginx-plndr-1
+    spec:
+      containers:
+      - name: nginx-plndr-1
+        image: nginx:1.7.9
+        ports:
+        - containerPort: 80
