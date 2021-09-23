@@ -44,7 +44,7 @@ $ kubectl get configmap -n kube-system kubevip -o yaml
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: plndr
+  name: kubevip
   namespace: kube-system
 data:
   cidr-default: 192.168.0.200/29
