@@ -180,9 +180,21 @@ func (k *kubevipLoadBalancerManager) syncLoadBalancer(ctx context.Context, servi
 	}
 
 	if service.Spec.LoadBalancerIP == "" {
+		// If the LoadBalancer address is empty, then do a local IPAM lookup
 		service.Spec.LoadBalancerIP, err = discoverAddress(controllerCM, service.Namespace, k.cloudConfigMap)
 		if err != nil {
 			return nil, err
+		}
+		// Update the services with this new address
+		klog.Infof("Updating service [%s], with load balancer IPAM address [%s]", service.Name, service.Spec.LoadBalancerIP)
+		_, err = k.kubeClient.CoreV1().Services(service.Namespace).Update(ctx, service, metav1.UpdateOptions{})
+		if err != nil {
+			// release the address internally as we failed to update service
+			ipamerr := ipam.ReleaseAddress(service.Namespace, service.Spec.LoadBalancerIP)
+			if ipamerr != nil {
+				klog.Errorln(ipamerr)
+			}
+			return nil, fmt.Errorf("Error updating Service Spec [%s] : %v", service.Name, err)
 		}
 	}
 
@@ -193,17 +205,6 @@ func (k *kubevipLoadBalancerManager) syncLoadBalancer(ctx context.Context, servi
 		Type:        string(service.Spec.Ports[0].Protocol),
 		Vip:         service.Spec.LoadBalancerIP,
 		Port:        int(service.Spec.Ports[0].Port),
-	}
-
-	klog.Infof("Updating service [%s], with load balancer address [%s]", service.Name, service.Spec.LoadBalancerIP)
-	_, err = k.kubeClient.CoreV1().Services(service.Namespace).Update(ctx, service, metav1.UpdateOptions{})
-	if err != nil {
-		// release the address internally as we failed to update service
-		ipamerr := ipam.ReleaseAddress(service.Namespace, service.Spec.LoadBalancerIP)
-		if ipamerr != nil {
-			klog.Errorln(ipamerr)
-		}
-		return nil, fmt.Errorf("Error updating Service Spec [%s] : %v", service.Name, err)
 	}
 
 	svc.addService(newSvc)

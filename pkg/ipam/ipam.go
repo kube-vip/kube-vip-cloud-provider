@@ -197,8 +197,12 @@ func buildHostsFromRange(ipRangeString string) ([]string, error) {
 		}
 		ips = append(ips, startRange.String())
 
-		// Break the lowerBytes to an array
+		// Break the lowerBytes to an array, also check for octet boundaries and increment other octets
 		for !startRange.Equal(endRange) {
+			if startRange[3] == 254 {
+				startRange[2]++
+				startRange[3] = 0
+			}
 			startRange[3]++
 			ips = append(ips, startRange.String())
 		}

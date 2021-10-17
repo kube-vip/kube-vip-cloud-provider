@@ -32,6 +32,14 @@ func Test_buildHostsFromRange(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "single range, across third octet",
+			args: args{
+				"192.168.0.253-192.168.1.2",
+			},
+			want:    []string{"192.168.0.253", "192.168.0.254", "192.168.1.1", "192.168.1.2"},
+			wantErr: false,
+		},
+		{
 			name: "two ranges, four addresses",
 			args: args{
 				"192.168.0.10-192.168.0.11,192.168.1.20-192.168.1.21",
