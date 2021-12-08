@@ -38,7 +38,7 @@ func FindAvailableHostFromRange(namespace, ipRange string) (string, error) {
 			// TODO - currently we search (incrementally) through the list of hosts
 			for y := range Manager[x].hosts {
 				// find a host that is marked false (i.e. unused)
-				if Manager[x].addressManager[Manager[x].hosts[y]] == false {
+				if !Manager[x].addressManager[Manager[x].hosts[y]] {
 					// Mark it to used
 					Manager[x].addressManager[Manager[x].hosts[y]] = true
 					return Manager[x].hosts[y], nil
@@ -63,7 +63,7 @@ func FindAvailableHostFromRange(namespace, ipRange string) (string, error) {
 	Manager = append(Manager, newManager)
 
 	for x := range newManager.hosts {
-		if Manager[x].addressManager[newManager.hosts[x]] == false {
+		if !Manager[x].addressManager[newManager.hosts[x]] {
 			Manager[x].addressManager[newManager.hosts[x]] = true
 			return newManager.hosts[x], nil
 		}
@@ -90,7 +90,7 @@ func FindAvailableHostFromCidr(namespace, cidr string) (string, error) {
 			// TODO - currently we search (incrementally) through the list of hosts
 			for y := range Manager[x].hosts {
 				// find a host that is marked false (i.e. unused)
-				if Manager[x].addressManager[Manager[x].hosts[y]] == false {
+				if !Manager[x].addressManager[Manager[x].hosts[y]] {
 					// Mark it to used
 					Manager[x].addressManager[Manager[x].hosts[y]] = true
 					return Manager[x].hosts[y], nil
@@ -115,7 +115,7 @@ func FindAvailableHostFromCidr(namespace, cidr string) (string, error) {
 	Manager = append(Manager, newManager)
 
 	for x := range newManager.hosts {
-		if Manager[x].addressManager[newManager.hosts[x]] == false {
+		if !Manager[x].addressManager[newManager.hosts[x]] {
 			Manager[x].addressManager[newManager.hosts[x]] = true
 			return newManager.hosts[x], nil
 		}
@@ -139,7 +139,7 @@ func ReleaseAddress(namespace, address string) error {
 func buildHostsFromCidr(cidr string) ([]string, error) {
 	var ips []string
 
-	// Split the ipranges (comma seperated)
+	// Split the ipranges (comma separated)
 	cidrs := strings.Split(cidr, ",")
 	if len(cidrs) == 0 {
 		return nil, fmt.Errorf("Unable to parse IP cidrs [%s]", cidr)
@@ -174,7 +174,7 @@ func buildHostsFromCidr(cidr string) ([]string, error) {
 func buildHostsFromRange(ipRangeString string) ([]string, error) {
 	var ips []string
 
-	// Split the ipranges (comma seperated)
+	// Split the ipranges (comma separated)
 	ranges := strings.Split(ipRangeString, ",")
 	if len(ranges) == 0 {
 		return nil, fmt.Errorf("Unable to parse IP ranges [%s]", ipRangeString)
