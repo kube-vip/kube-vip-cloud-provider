@@ -1,8 +1,9 @@
 package ipam
 
 import (
-	"reflect"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func Test_buildHostsFromRange(t *testing.T) {
@@ -24,7 +25,7 @@ func Test_buildHostsFromRange(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "single range, three  addresses",
+			name: "single range, three addresses",
 			args: args{
 				"192.168.0.10-192.168.0.12",
 			},
@@ -63,7 +64,7 @@ func Test_buildHostsFromRange(t *testing.T) {
 				t.Errorf("buildHostsFromRange() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if !reflect.DeepEqual(got, tt.want) {
+			if !assert.ElementsMatch(t, got, tt.want) {
 				t.Errorf("buildHostsFromRange() = %v, want %v", got, tt.want)
 			}
 		})
@@ -104,7 +105,7 @@ func Test_buildHostsFromCidr(t *testing.T) {
 				t.Errorf("buildHostsFromCidr() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if !reflect.DeepEqual(got, tt.want) {
+			if !assert.ElementsMatch(t, got, tt.want) {
 				t.Errorf("buildHostsFromCidr() = %v, want %v", got, tt.want)
 			}
 		})

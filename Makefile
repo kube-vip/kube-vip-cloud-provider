@@ -56,7 +56,7 @@ image:
 simplify:
 	@gofmt -s -l -w $(SRC)
 
-check:
+check: test
 	@test -z $(shell gofmt -l main.go | tee /dev/stderr) || echo "[WARN] Fix formatting issues with 'make fmt'"
 	@for d in $$(go list ./... | grep -v /vendor/); do golint $${d}; done
 	@golangci-lint run
@@ -64,3 +64,6 @@ check:
 
 run: install
 	@$(TARGET)
+
+test:
+	go test ./...
