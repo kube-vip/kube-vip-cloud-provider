@@ -32,7 +32,7 @@ type kubevipLoadBalancerManager struct {
 	cloudConfigMap string
 }
 
-func newLoadBalancer(kubeClient *kubernetes.Clientset, ns, cm, serviceCidr string) cloudprovider.LoadBalancer {
+func newLoadBalancer(kubeClient *kubernetes.Clientset, ns, cm string) cloudprovider.LoadBalancer {
 	return &kubevipLoadBalancerManager{
 		kubeClient:     kubeClient,
 		nameSpace:      ns,
@@ -101,7 +101,7 @@ func (k *kubevipLoadBalancerManager) deleteLoadBalancer(ctx context.Context, ser
 		klog.Errorf("The configMap [%s] doensn't exist", KubeVipClientConfig)
 		return nil
 	}
-	// Find the services configuraiton in the configMap
+	// Find the services configuration in the configMap
 	svc, err := k.GetServices(cm)
 	if err != nil {
 		klog.Errorf("The service [%s] in configMap [%s] doensn't exist", service.Name, KubeVipClientConfig)
@@ -148,7 +148,7 @@ func (k *kubevipLoadBalancerManager) syncLoadBalancer(ctx context.Context, servi
 	// This function reconciles the load balancer state
 	klog.Infof("syncing service '%s' (%s)", service.Name, service.UID)
 
-	// Find the services configuraiton in the configMap
+	// Find the services configuration in the configMap
 	svc, err := k.GetServices(namespaceCM)
 	if err != nil {
 		klog.Errorf("Unable to retrieve services from configMap [%s], [%s]", KubeVipClientConfig, err.Error())
@@ -209,7 +209,7 @@ func (k *kubevipLoadBalancerManager) syncLoadBalancer(ctx context.Context, servi
 
 	svc.addService(newSvc)
 
-	namespaceCM, err = k.UpdateConfigMap(ctx, namespaceCM, svc)
+	_, err = k.UpdateConfigMap(ctx, namespaceCM, svc)
 	if err != nil {
 		return nil, err
 	}

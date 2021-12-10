@@ -46,7 +46,6 @@ var _ cloudprovider.Interface = &KubeVipCloudProvider{}
 func newKubeVipCloudProvider(io.Reader) (cloudprovider.Interface, error) {
 	ns := os.Getenv("KUBEVIP_NAMESPACE")
 	cm := os.Getenv("KUBEVIP_CONFIG_MAP")
-	cidr := os.Getenv("KUBEVIP_SERVICE_CIDR")
 
 	if cm == "" {
 		cm = KubeVipCloudConfig
@@ -57,7 +56,7 @@ func newKubeVipCloudProvider(io.Reader) (cloudprovider.Interface, error) {
 	}
 
 	var cl *kubernetes.Clientset
-	if OutSideCluster == false {
+	if !OutSideCluster {
 		// This will attempt to load the configuration when running within a POD
 		cfg, err := rest.InClusterConfig()
 		if err != nil {
@@ -81,7 +80,7 @@ func newKubeVipCloudProvider(io.Reader) (cloudprovider.Interface, error) {
 		}
 	}
 	return &KubeVipCloudProvider{
-		lb: newLoadBalancer(cl, ns, cm, cidr),
+		lb: newLoadBalancer(cl, ns, cm),
 	}, nil
 }
 
