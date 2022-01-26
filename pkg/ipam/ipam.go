@@ -170,6 +170,25 @@ func buildHostsFromCidr(cidr string) ([]string, error) {
 	return removeDuplicateAddresses(ips), nil
 }
 
+// IPStr2Int - Converts the IP address in string format to an integer
+func IPStr2Int(ip string) uint {
+	b := net.ParseIP(ip).To4()
+	if b == nil {
+		return 0
+	}
+	return uint(b[3]) | uint(b[2])<<8 | uint(b[1])<<16 | uint(b[0])<<24
+}
+
+//IPInt2Str - Converts the IP address in integer format to an string
+func IPInt2Str(i uint) string {
+	ip := make(net.IP, net.IPv4len)
+	ip[0] = byte(i >> 24)
+	ip[1] = byte(i >> 16)
+	ip[2] = byte(i >> 8)
+	ip[3] = byte(i)
+	return ip.String()
+}
+
 // buildHostsFromRange - Builds a list of addresses in the cidr
 func buildHostsFromRange(ipRangeString string) ([]string, error) {
 	var ips []string
@@ -186,26 +205,19 @@ func buildHostsFromRange(ipRangeString string) ([]string, error) {
 		if len(ipRange) != 2 {
 			return nil, fmt.Errorf("Unable to parse IP range [%s]", ranges[x])
 		}
-		startRange := net.ParseIP(ipRange[0]).To4()
-		endRange := net.ParseIP(ipRange[1]).To4()
-		//parse the ranges to make sure we don't end in a crazy loop
-		if startRange[0] > endRange[0] {
-			return nil, fmt.Errorf("First octet of start range [%d] is higher then the ending range [%d]", startRange[0], endRange[0])
-		}
-		if startRange[1] > endRange[1] {
-			return nil, fmt.Errorf("Second octet of start range [%d] is higher then the ending range [%d]", startRange[1], endRange[1])
-		}
-		ips = append(ips, startRange.String())
 
-		// Break the lowerBytes to an array, also check for octet boundaries and increment other octets
-		for !startRange.Equal(endRange) {
-			if startRange[3] == 254 {
-				startRange[2]++
-				startRange[3] = 0
-			}
-			startRange[3]++
-			ips = append(ips, startRange.String())
+		firstIP := IPStr2Int(ipRange[0])
+		lastIP := IPStr2Int(ipRange[1])
+		fmt.Printf("firstIP=%d, lastIP=%d\n", firstIP, lastIP)
+		if firstIP > lastIP {
+			// swap
+			firstIP, lastIP = lastIP, firstIP
 		}
+
+		for ip := firstIP; ip <= lastIP; ip++ {
+			ips = append(ips, IPInt2Str(ip))
+		}
+
 		klog.Infof("Rebuilding addresse cache, [%d] addresses exist", len(ips))
 	}
 	return removeDuplicateAddresses(ips), nil
