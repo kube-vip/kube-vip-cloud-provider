@@ -105,8 +105,9 @@ func (k *kubevipLoadBalancerManager) syncLoadBalancer(ctx context.Context, servi
 		existingServiceIPS = append(existingServiceIPS, svcs.Items[x].Labels["ipam-address"])
 	}
 
-	// // If the LoadBalancer address is empty, then do a local IPAM lookup
+  // If the LoadBalancer address is empty, then do a local IPAM lookup
 	loadBalancerIP, err := discoverAddress(controllerCM, service.Namespace, k.cloudConfigMap, existingServiceIPS)
+
 	if err != nil {
 		return nil, err
 	}

@@ -7,7 +7,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// Services functions - once the service data is taken from teh configMap, these functions will interact with the data
+// Services functions - once the service data is taken from the configMap, these functions will interact with the data
 
 // func (s *kubevipServices) addService(newSvc services) {
 // 	s.Services = append(s.Services, newSvc)
@@ -35,16 +35,6 @@ import (
 // 	return updatedServices
 // }
 
-// func (s *kubevipServices) updateServices(vip, name, uid string) string {
-// 	newsvc := services{
-// 		Vip:         vip,
-// 		UID:         uid,
-// 		ServiceName: name,
-// 	}
-// 	s.Services = append(s.Services, newsvc)
-// 	b, _ := json.Marshal(s)
-// 	return string(b)
-// }
 
 // ConfigMap functions - these wrap all interactions with the kubernetes configmaps
 
