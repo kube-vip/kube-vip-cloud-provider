@@ -8,36 +8,26 @@ import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/util/retry"
 	cloudprovider "k8s.io/cloud-provider"
 
 	"k8s.io/klog"
 )
 
-type kubevipServices struct {
-	Services []services `json:"services"`
-}
-
-type services struct {
-	Vip         string `json:"vip"`
-	Port        int    `json:"port"`
-	Type        string `json:"type"`
-	UID         string `json:"uid"`
-	ServiceName string `json:"serviceName"`
-}
-
-//PlndrLoadBalancer -
+//kubevipLoadBalancerManager -
 type kubevipLoadBalancerManager struct {
 	kubeClient     *kubernetes.Clientset
 	nameSpace      string
 	cloudConfigMap string
 }
 
-func newLoadBalancer(kubeClient *kubernetes.Clientset, ns, cm string) cloudprovider.LoadBalancer {
-	return &kubevipLoadBalancerManager{
+func newLoadBalancer(kubeClient *kubernetes.Clientset, ns, cm, serviceCidr string) cloudprovider.LoadBalancer {
+	k := &kubevipLoadBalancerManager{
 		kubeClient:     kubeClient,
 		nameSpace:      ns,
 		cloudConfigMap: cm,
 	}
+	return k
 }
 
 func (k *kubevipLoadBalancerManager) EnsureLoadBalancer(ctx context.Context, clusterName string, service *v1.Service, nodes []*v1.Node) (lbs *v1.LoadBalancerStatus, err error) {
@@ -53,33 +43,12 @@ func (k *kubevipLoadBalancerManager) EnsureLoadBalancerDeleted(ctx context.Conte
 }
 
 func (k *kubevipLoadBalancerManager) GetLoadBalancer(ctx context.Context, clusterName string, service *v1.Service) (status *v1.LoadBalancerStatus, exists bool, err error) {
-
-	// Retrieve the kube-vip configuration from it's namespace
-	cm, err := k.GetConfigMap(ctx, KubeVipClientConfig, service.Namespace)
-	if err != nil {
-		return nil, true, nil
+	if service.Labels["implementation"] == "kube=vip" {
+		return &service.Status.LoadBalancer, true, nil
+	} else {
+		return nil, false, nil
 	}
 
-	// Find the services configuration in the configMap
-	svc, err := k.GetServices(cm)
-	if err != nil {
-		return nil, false, err
-	}
-
-	for x := range svc.Services {
-		if svc.Services[x].UID == string(service.UID) {
-			return &service.Status.LoadBalancer, true, nil
-
-			// return &v1.LoadBalancerStatus{
-			// 	Ingress: []v1.LoadBalancerIngress{
-			// 		{
-			// 			IP: svc.Services[x].Vip,
-			// 		},
-			// 	},
-			// }, true, nil
-		}
-	}
-	return nil, false, nil
 }
 
 // GetLoadBalancerName returns the name of the load balancer. Implementations must treat the
@@ -95,33 +64,30 @@ func getDefaultLoadBalancerName(service *v1.Service) string {
 func (k *kubevipLoadBalancerManager) deleteLoadBalancer(ctx context.Context, service *v1.Service) error {
 	klog.Infof("deleting service '%s' (%s)", service.Name, service.UID)
 
-	// Get the kube-vip (client) configuration from it's namespace
-	cm, err := k.GetConfigMap(ctx, KubeVipClientConfig, service.Namespace)
-	if err != nil {
-		klog.Errorf("The configMap [%s] doensn't exist", KubeVipClientConfig)
-		return nil
-	}
-	// Find the services configuration in the configMap
-	svc, err := k.GetServices(cm)
-	if err != nil {
-		klog.Errorf("The service [%s] in configMap [%s] doensn't exist", service.Name, KubeVipClientConfig)
-		return nil
-	}
-
-	// Update the services configuration, by removing the  service
-	updatedSvc := svc.delServiceFromUID(string(service.UID))
-	if len(service.Status.LoadBalancer.Ingress) != 0 {
-		err = ipam.ReleaseAddress(service.Namespace, service.Spec.LoadBalancerIP)
-		if err != nil {
-			klog.Errorln(err)
-		}
-	}
-	// Update the configMap
-	_, err = k.UpdateConfigMap(ctx, cm, updatedSvc)
-	return err
+	return nil
 }
 
+// syncLoadBalancer
+// 1. Is this loadBalancer already created, and does it have an address? return status
+// 2. Is this a new loadBalancer (with no IP address)
+// 2a. Get all existing kube-vip services
+// 2b. Get the network configuration for this service (namespace) / (CIDR/Range)
+// 2c. Between the two find a free address
+
 func (k *kubevipLoadBalancerManager) syncLoadBalancer(ctx context.Context, service *v1.Service) (*v1.LoadBalancerStatus, error) {
+	// This function reconciles the load balancer state
+	klog.Infof("syncing service '%s' (%s)", service.Name, service.UID)
+
+	// The loadBalancer address has already been populated
+	if service.Spec.LoadBalancerIP != "" {
+		return &service.Status.LoadBalancer, nil
+	}
+
+	// Get all services in this namespace, that have the correct label
+	svcs, err := k.kubeClient.CoreV1().Services(service.Namespace).List(ctx, metav1.ListOptions{LabelSelector: "implementation=kube-vip"})
+	if err != nil {
+		return &service.Status.LoadBalancer, err
+	}
 
 	// Get the clound controller configuration map
 	controllerCM, err := k.GetConfigMap(ctx, KubeVipClientConfig, "kube-system")
@@ -134,89 +100,50 @@ func (k *kubevipLoadBalancerManager) syncLoadBalancer(ctx context.Context, servi
 		}
 	}
 
-	// Retrieve the kube-vip configuration map
-	namespaceCM, err := k.GetConfigMap(ctx, KubeVipClientConfig, service.Namespace)
-	if err != nil {
-		klog.Errorf("Unable to retrieve kube-vip service cache from configMap [%s] in [%s]", KubeVipClientConfig, service.Namespace)
-		// TODO - determine best course of action
-		namespaceCM, err = k.CreateConfigMap(ctx, KubeVipClientConfig, service.Namespace)
-		if err != nil {
-			return nil, err
-		}
+	var existingServiceIPS []string
+	for x := range svcs.Items {
+		existingServiceIPS = append(existingServiceIPS, svcs.Items[x].Labels["ipam-address"])
 	}
 
-	// This function reconciles the load balancer state
-	klog.Infof("syncing service '%s' (%s)", service.Name, service.UID)
+  // If the LoadBalancer address is empty, then do a local IPAM lookup
+	loadBalancerIP, err := discoverAddress(controllerCM, service.Namespace, k.cloudConfigMap, existingServiceIPS)
 
-	// Find the services configuration in the configMap
-	svc, err := k.GetServices(namespaceCM)
-	if err != nil {
-		klog.Errorf("Unable to retrieve services from configMap [%s], [%s]", KubeVipClientConfig, err.Error())
-
-		// TODO best course of action, currently we create a new services config
-		svc = &kubevipServices{}
-	}
-
-	// Check for existing configuration
-
-	existing := svc.findService(string(service.UID))
-	if existing != nil {
-		klog.Infof("found existing service '%s' (%s) with vip %s", service.Name, service.UID, existing.Vip)
-		return &service.Status.LoadBalancer, nil
-
-		// If this is 0.0.0.0 then it's a DHCP lease and we need to return that not the 0.0.0.0
-		// if existing.Vip == "0.0.0.0" {
-		// 	return &service.Status.LoadBalancer, nil
-		// }
-
-		// //
-		// return &v1.LoadBalancerStatus{
-		// 	Ingress: []v1.LoadBalancerIngress{
-		// 		{
-		// 			IP: existing.Vip,
-		// 		},
-		// 	},
-		// }, nil
-	}
-
-	if service.Spec.LoadBalancerIP == "" {
-		// If the LoadBalancer address is empty, then do a local IPAM lookup
-		service.Spec.LoadBalancerIP, err = discoverAddress(controllerCM, service.Namespace, k.cloudConfigMap)
-		if err != nil {
-			return nil, err
-		}
-		// Update the services with this new address
-		klog.Infof("Updating service [%s], with load balancer IPAM address [%s]", service.Name, service.Spec.LoadBalancerIP)
-		_, err = k.kubeClient.CoreV1().Services(service.Namespace).Update(ctx, service, metav1.UpdateOptions{})
-		if err != nil {
-			// release the address internally as we failed to update service
-			ipamerr := ipam.ReleaseAddress(service.Namespace, service.Spec.LoadBalancerIP)
-			if ipamerr != nil {
-				klog.Errorln(ipamerr)
-			}
-			return nil, fmt.Errorf("Error updating Service Spec [%s] : %v", service.Name, err)
-		}
-	}
-
-	// TODO - manage more than one set of ports
-	newSvc := services{
-		ServiceName: service.Name,
-		UID:         string(service.UID),
-		Type:        string(service.Spec.Ports[0].Protocol),
-		Vip:         service.Spec.LoadBalancerIP,
-		Port:        int(service.Spec.Ports[0].Port),
-	}
-
-	svc.addService(newSvc)
-
-	_, err = k.UpdateConfigMap(ctx, namespaceCM, svc)
 	if err != nil {
 		return nil, err
 	}
+
+	// Update the services with this new address
+	retryErr := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		recentService, getErr := k.kubeClient.CoreV1().Services(service.Namespace).Get(ctx, service.Name, metav1.GetOptions{})
+		if getErr != nil {
+			return getErr
+		}
+
+		klog.Infof("Updating service [%s], with load balancer IPAM address [%s]", service.Name, loadBalancerIP)
+
+		if recentService.Labels == nil {
+			// Just because ..
+			recentService.Labels = make(map[string]string)
+		}
+		// Set Label for service lookups
+		recentService.Labels["implementation"] = "kube-vip"
+		recentService.Labels["ipam-address"] = loadBalancerIP
+
+		// Set IPAM address to Load Balancer Service
+		recentService.Spec.LoadBalancerIP = loadBalancerIP
+
+		// Update the actual service with teh address and the labels
+		_, updateErr := k.kubeClient.CoreV1().Services(recentService.Namespace).Update(ctx, recentService, metav1.UpdateOptions{})
+		return updateErr
+	})
+	if retryErr != nil {
+		return nil, fmt.Errorf("error updating Service Spec [%s] : %v", service.Name, err)
+	}
+
 	return &service.Status.LoadBalancer, nil
 }
 
-func discoverAddress(cm *v1.ConfigMap, namespace, configMapName string) (vip string, err error) {
+func discoverAddress(cm *v1.ConfigMap, namespace, configMapName string, existingServiceIPS []string) (vip string, err error) {
 	var cidr, ipRange string
 	var ok bool
 
@@ -224,10 +151,10 @@ func discoverAddress(cm *v1.ConfigMap, namespace, configMapName string) (vip str
 	cidrKey := fmt.Sprintf("cidr-%s", namespace)
 	// Lookup current namespace
 	if cidr, ok = cm.Data[cidrKey]; !ok {
-		klog.Info(fmt.Errorf("No cidr config for namespace [%s] exists in key [%s] configmap [%s]", namespace, cidrKey, configMapName))
+		klog.Info(fmt.Errorf("no cidr config for namespace [%s] exists in key [%s] configmap [%s]", namespace, cidrKey, configMapName))
 		// Lookup global cidr configmap data
 		if cidr, ok = cm.Data["cidr-global"]; !ok {
-			klog.Info(fmt.Errorf("No global cidr config exists [cidr-global]"))
+			klog.Info(fmt.Errorf("no global cidr config exists [cidr-global]"))
 		} else {
 			klog.Infof("Taking address from [cidr-global] pool")
 		}
@@ -235,7 +162,7 @@ func discoverAddress(cm *v1.ConfigMap, namespace, configMapName string) (vip str
 		klog.Infof("Taking address from [%s] pool", cidrKey)
 	}
 	if ok {
-		vip, err = ipam.FindAvailableHostFromCidr(namespace, cidr)
+		vip, err = ipam.FindAvailableHostFromCidr(namespace, cidr, existingServiceIPS)
 		if err != nil {
 			return "", err
 		}
@@ -246,10 +173,10 @@ func discoverAddress(cm *v1.ConfigMap, namespace, configMapName string) (vip str
 	rangeKey := fmt.Sprintf("range-%s", namespace)
 	// Lookup current namespace
 	if ipRange, ok = cm.Data[rangeKey]; !ok {
-		klog.Info(fmt.Errorf("No range config for namespace [%s] exists in key [%s] configmap [%s]", namespace, rangeKey, configMapName))
+		klog.Info(fmt.Errorf("no range config for namespace [%s] exists in key [%s] configmap [%s]", namespace, rangeKey, configMapName))
 		// Lookup global range configmap data
 		if ipRange, ok = cm.Data["range-global"]; !ok {
-			klog.Info(fmt.Errorf("No global range config exists [range-global]"))
+			klog.Info(fmt.Errorf("no global range config exists [range-global]"))
 		} else {
 			klog.Infof("Taking address from [range-global] pool")
 		}
@@ -257,11 +184,11 @@ func discoverAddress(cm *v1.ConfigMap, namespace, configMapName string) (vip str
 		klog.Infof("Taking address from [%s] pool", rangeKey)
 	}
 	if ok {
-		vip, err = ipam.FindAvailableHostFromRange(namespace, ipRange)
+		vip, err = ipam.FindAvailableHostFromRange(namespace, ipRange, existingServiceIPS)
 		if err != nil {
 			return vip, err
 		}
 		return
 	}
-	return "", fmt.Errorf("No IP address ranges could be found either range-global or range-<namespace>")
+	return "", fmt.Errorf("no IP address ranges could be found either range-global or range-<namespace>")
 }

@@ -59,7 +59,7 @@ func Test_buildHostsFromRange(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := buildHostsFromRange(tt.args.ipRangeString)
+			got, err := buildAddressesFromRange(tt.args.ipRangeString)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("buildHostsFromRange() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -107,6 +107,55 @@ func Test_buildHostsFromCidr(t *testing.T) {
 			}
 			if !assert.ElementsMatch(t, got, tt.want) {
 				t.Errorf("buildHostsFromCidr() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFindAvailableHostFromRange(t *testing.T) {
+	type args struct {
+		namespace        string
+		ipRange          string
+		existingServices []string
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    string
+		wantErr bool
+	}{
+		{
+			name: "simple range",
+			args: args{
+				namespace:        "default2",
+				ipRange:          "192.168.0.10-192.168.0.11",
+				existingServices: []string{""},
+			},
+			want: "192.168.0.10",
+		},
+		{
+			name: "simple range",
+			args: args{
+				namespace:        "default2",
+				ipRange:          "192.168.0.10-192.168.0.11",
+				existingServices: []string{""},
+			},
+			want: "192.168.0.10",
+		},
+	}
+	// Manager = append(Manager, ipManager{
+	// 	ipRange:   "192.168.0.10-192.168.0.11",
+	// 	namespace: "default",
+	// })
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := FindAvailableHostFromRange(tt.args.namespace, tt.args.ipRange, tt.args.existingServices)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("FindAvailableHostFromRange() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("FindAvailableHostFromRange() = %v, want %v", got, tt.want)
 			}
 		})
 	}
