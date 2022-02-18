@@ -13,67 +13,83 @@ var Manager []ipManager
 
 // ipManager defines the mapping to a namespace and address pool
 type ipManager struct {
-	namespace      string
-	cidr           string
-	ipRange        string
-	addressManager map[string]bool
-	hosts          []string
+	// Identifies the manager
+	namespace string
+
+	// The network configuration
+	cidr    string
+	ipRange string
+
+	// todo - This confuses me ...
+	addresses []string
 }
 
 // FindAvailableHostFromRange - will look through the cidr and the address Manager and find a free address (if possible)
-func FindAvailableHostFromRange(namespace, ipRange string) (string, error) {
+func FindAvailableHostFromRange(namespace, ipRange string, existingServiceIPS []string) (string, error) {
 
 	// Look through namespaces and update one if it exists
 	for x := range Manager {
 		if Manager[x].namespace == namespace {
 			// Check that the address range is the same
 			if Manager[x].ipRange != ipRange {
+				klog.Infof("Updating IP address range from [%s] to [%s]", Manager[x].ipRange, ipRange)
+
 				// If not rebuild the available hosts
-				ah, err := buildHostsFromRange(ipRange)
+				ah, err := buildAddressesFromRange(ipRange)
 				if err != nil {
 					return "", err
 				}
-				Manager[x].hosts = ah
+				Manager[x].addresses = ah
+				Manager[x].ipRange = ipRange
 			}
+
 			// TODO - currently we search (incrementally) through the list of hosts
-			for y := range Manager[x].hosts {
-				// find a host that is marked false (i.e. unused)
-				if Manager[x].addressManager[Manager[x].hosts[y]] == false {
-					// Mark it to used
-					Manager[x].addressManager[Manager[x].hosts[y]] = true
-					return Manager[x].hosts[y], nil
+			for y := range Manager[x].addresses {
+				found := false
+				for z := range existingServiceIPS {
+					if Manager[x].addresses[y] == existingServiceIPS[z] {
+						found = true
+					}
+				}
+				if !found {
+					return Manager[x].addresses[y], nil
 				}
 			}
 			// If we have found the manager for this namespace and not returned an address then we've expired the range
-			return "", fmt.Errorf("No addresses available in [%s] range [%s]", namespace, ipRange)
+			return "", fmt.Errorf("no addresses available in [%s] range [%s]", namespace, ipRange)
 
 		}
 	}
-	ah, err := buildHostsFromRange(ipRange)
+	ah, err := buildAddressesFromRange(ipRange)
 	if err != nil {
 		return "", err
 	}
 	// If it doesn't exist then it will need adding
 	newManager := ipManager{
-		namespace:      namespace,
-		addressManager: make(map[string]bool),
-		hosts:          ah,
-		ipRange:        ipRange,
+		namespace: namespace,
+		addresses: ah,
+		ipRange:   ipRange,
 	}
 	Manager = append(Manager, newManager)
-
-	for x := range newManager.hosts {
-		if Manager[x].addressManager[newManager.hosts[x]] == false {
-			Manager[x].addressManager[newManager.hosts[x]] = true
-			return newManager.hosts[x], nil
+	// TODO - currently we search (incrementally) through the list of hosts
+	for y := range newManager.addresses {
+		found := false
+		for z := range existingServiceIPS {
+			if newManager.addresses[y] == existingServiceIPS[z] {
+				found = true
+			}
+		}
+		if !found {
+			return newManager.addresses[y], nil
 		}
 	}
-	return "", fmt.Errorf("No addresses available in [%s] range [%s]", namespace, ipRange)
+
+	return "", fmt.Errorf("no addresses available in [%s] range [%s]", namespace, ipRange)
 
 }
 
 // FindAvailableHostFromCidr - will look through the cidr and the address Manager and find a free address (if possible)
-func FindAvailableHostFromCidr(namespace, cidr string) (string, error) {
+func FindAvailableHostFromCidr(namespace, cidr string, existingServiceIPS []string) (string, error) {
 
 	// Look through namespaces and update one if it exists
 	for x := range Manager {
@@ -85,19 +101,24 @@ func FindAvailableHostFromCidr(namespace, cidr string) (string, error) {
 				if err != nil {
 					return "", err
 				}
-				Manager[x].hosts = ah
+				Manager[x].addresses = ah
+				Manager[x].cidr = cidr
+
 			}
 			// TODO - currently we search (incrementally) through the list of hosts
-			for y := range Manager[x].hosts {
-				// find a host that is marked false (i.e. unused)
-				if Manager[x].addressManager[Manager[x].hosts[y]] == false {
-					// Mark it to used
-					Manager[x].addressManager[Manager[x].hosts[y]] = true
-					return Manager[x].hosts[y], nil
+			for y := range Manager[x].addresses {
+				found := false
+				for z := range existingServiceIPS {
+					if Manager[x].addresses[y] == existingServiceIPS[z] {
+						found = true
+					}
+				}
+				if !found {
+					return Manager[x].addresses[y], nil
 				}
 			}
 			// If we have found the manager for this namespace and not returned an address then we've expired the range
-			return "", fmt.Errorf("No addresses available in [%s] range [%s]", namespace, cidr)
+			return "", fmt.Errorf("no addresses available in [%s] range [%s]", namespace, cidr)
 
 		}
 	}
@@ -107,33 +128,48 @@ func FindAvailableHostFromCidr(namespace, cidr string) (string, error) {
 	}
 	// If it doesn't exist then it will need adding
 	newManager := ipManager{
-		namespace:      namespace,
-		addressManager: make(map[string]bool),
-		hosts:          ah,
-		cidr:           cidr,
+		namespace: namespace,
+		addresses: ah,
+		cidr:      cidr,
 	}
 	Manager = append(Manager, newManager)
 
-	for x := range newManager.hosts {
-		if Manager[x].addressManager[newManager.hosts[x]] == false {
-			Manager[x].addressManager[newManager.hosts[x]] = true
-			return newManager.hosts[x], nil
+	// TODO - currently we search (incrementally) through the list of hosts
+	for y := range newManager.addresses {
+		found := false
+		for z := range existingServiceIPS {
+			if newManager.addresses[y] == existingServiceIPS[z] {
+				found = true
+			}
+		}
+		if !found {
+			return newManager.addresses[y], nil
 		}
 	}
 	return "", fmt.Errorf("No addresses available in [%s] range [%s]", namespace, cidr)
 
 }
 
-// ReleaseAddress - removes the mark on an address
-func ReleaseAddress(namespace, address string) error {
-	for x := range Manager {
-		if Manager[x].namespace == namespace {
-			Manager[x].addressManager[address] = false
-			return nil
-		}
-	}
-	return fmt.Errorf("Unable to release address [%s] in namespace [%s]", address, namespace)
-}
+// // RenewAddress - removes the mark on an address
+// func RenewAddress(namespace, address string) {
+// 	for x := range Manager {
+// 		if Manager[x].namespace == namespace {
+// 			// Make sure we update the address manager to mark this address in use.
+// 			Manager[x].addressManager[address] = true
+// 		}
+// 	}
+// }
+
+// // ReleaseAddress - removes the mark on an address
+// func ReleaseAddress(namespace, address string) error {
+// 	for x := range Manager {
+// 		if Manager[x].namespace == namespace {
+// 			Manager[x].addressManager[address] = false
+// 			return nil
+// 		}
+// 	}
+// 	return fmt.Errorf("unable to release address [%s] in namespace [%s]", address, namespace)
+// }
 
 // buildHostsFromCidr - Builds a list of addresses in the cidr
 func buildHostsFromCidr(cidr string) ([]string, error) {
@@ -171,29 +207,28 @@ func buildHostsFromCidr(cidr string) ([]string, error) {
 }
 
 // buildHostsFromRange - Builds a list of addresses in the cidr
-func buildHostsFromRange(ipRangeString string) ([]string, error) {
+func buildAddressesFromRange(ipRangeString string) ([]string, error) {
 	var ips []string
-
 	// Split the ipranges (comma seperated)
 	ranges := strings.Split(ipRangeString, ",")
 	if len(ranges) == 0 {
-		return nil, fmt.Errorf("Unable to parse IP ranges [%s]", ipRangeString)
+		return nil, fmt.Errorf("unable to parse IP ranges [%s]", ipRangeString)
 	}
 
 	for x := range ranges {
 		ipRange := strings.Split(ranges[x], "-")
 		// Make sure we have x.x.x.x-x.x.x.x
 		if len(ipRange) != 2 {
-			return nil, fmt.Errorf("Unable to parse IP range [%s]", ranges[x])
+			return nil, fmt.Errorf("unable to parse IP range [%s]", ranges[x])
 		}
 		startRange := net.ParseIP(ipRange[0]).To4()
 		endRange := net.ParseIP(ipRange[1]).To4()
 		//parse the ranges to make sure we don't end in a crazy loop
 		if startRange[0] > endRange[0] {
-			return nil, fmt.Errorf("First octet of start range [%d] is higher then the ending range [%d]", startRange[0], endRange[0])
+			return nil, fmt.Errorf("first octet of start range [%d] is higher then the ending range [%d]", startRange[0], endRange[0])
 		}
 		if startRange[1] > endRange[1] {
-			return nil, fmt.Errorf("Second octet of start range [%d] is higher then the ending range [%d]", startRange[1], endRange[1])
+			return nil, fmt.Errorf("second octet of start range [%d] is higher then the ending range [%d]", startRange[1], endRange[1])
 		}
 		ips = append(ips, startRange.String())
 
@@ -209,17 +244,21 @@ func buildHostsFromRange(ipRangeString string) ([]string, error) {
 		klog.Infof("Rebuilding addresse cache, [%d] addresses exist", len(ips))
 	}
 	return removeDuplicateAddresses(ips), nil
+	//return ips, nil
 }
 
 func removeDuplicateAddresses(arr []string) []string {
 	addresses := map[string]bool{}
 	uniqueAddresses := []string{} // Keep all keys from the map into a slice.
 
+	// iterate over all addresses from range, add them to a map if not found
+	// then add them to the unique addresses afterwards
 	for i := range arr {
-		addresses[arr[i]] = true
-	}
-	for j := range addresses {
-		uniqueAddresses = append(uniqueAddresses, j)
+		if !addresses[arr[i]] {
+			addresses[arr[i]] = true
+			uniqueAddresses = append(uniqueAddresses, arr[i])
+
+		}
 	}
 	return uniqueAddresses
 }

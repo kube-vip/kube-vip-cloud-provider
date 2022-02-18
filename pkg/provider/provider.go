@@ -57,7 +57,7 @@ func newKubeVipCloudProvider(io.Reader) (cloudprovider.Interface, error) {
 	}
 
 	var cl *kubernetes.Clientset
-	if OutSideCluster == false {
+	if !OutSideCluster {
 		// This will attempt to load the configuration when running within a POD
 		cfg, err := rest.InClusterConfig()
 		if err != nil {
