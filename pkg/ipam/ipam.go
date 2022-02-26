@@ -246,7 +246,6 @@ func buildAddressesFromRange(ipRangeString string) ([]string, error) {
 			return nil, fmt.Errorf("unable to parse IP range [%s]", ranges[x])
 		}
 
-
 		firstIP := IPStr2Int(ipRange[0])
 		lastIP := IPStr2Int(ipRange[1])
 		if firstIP > lastIP {
@@ -255,13 +254,23 @@ func buildAddressesFromRange(ipRangeString string) ([]string, error) {
 		}
 
 		for ip := firstIP; ip <= lastIP; ip++ {
-			ips = append(ips, IPInt2Str(ip))
+			if ipInvalid(ip) {
+				ips = append(ips, IPInt2Str(ip))
+			}
 		}
 
 		klog.Infof("Rebuilding addresse cache, [%d] addresses exist", len(ips))
 	}
 	return removeDuplicateAddresses(ips), nil
 	//return ips, nil
+}
+
+func ipInvalid(ip uint) bool {
+	var lastOctet = ip & 0x000000ff
+	if lastOctet == 0x00 || lastOctet == 0xff {
+		return false
+	}
+	return true
 }
 
 func removeDuplicateAddresses(arr []string) []string {
