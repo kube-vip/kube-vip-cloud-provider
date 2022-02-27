@@ -35,7 +35,6 @@ import (
 // 	return updatedServices
 // }
 
-
 // ConfigMap functions - these wrap all interactions with the kubernetes configmaps
 
 // func (k *kubevipLoadBalancerManager) GetServices(cm *v1.ConfigMap) (svcs *kubevipServices, err error) {
