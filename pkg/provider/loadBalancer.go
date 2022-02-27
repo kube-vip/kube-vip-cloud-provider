@@ -21,7 +21,7 @@ type kubevipLoadBalancerManager struct {
 	cloudConfigMap string
 }
 
-func newLoadBalancer(kubeClient *kubernetes.Clientset, ns, cm, serviceCidr string) cloudprovider.LoadBalancer {
+func newLoadBalancer(kubeClient *kubernetes.Clientset, ns, cm string) cloudprovider.LoadBalancer {
 	k := &kubevipLoadBalancerManager{
 		kubeClient:     kubeClient,
 		nameSpace:      ns,
