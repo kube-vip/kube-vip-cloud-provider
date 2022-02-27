@@ -12,7 +12,7 @@ import (
 func buildHostsFromCidr(cidr string) ([]string, error) {
 	var ips []string
 
-	// Split the ipranges (comma seperated)
+	// Split the ipranges (comma separated)
 	cidrs := strings.Split(cidr, ",")
 	if len(cidrs) == 0 {
 		return nil, fmt.Errorf("unable to parse IP cidrs [%s]", cidr)
@@ -46,7 +46,7 @@ func buildHostsFromCidr(cidr string) ([]string, error) {
 // buildHostsFromRange - Builds a list of addresses in the cidr
 func buildAddressesFromRange(ipRangeString string) ([]string, error) {
 	var ips []string
-	// Split the ipranges (comma seperated)
+	// Split the ipranges (comma separated)
 	ranges := strings.Split(ipRangeString, ",")
 	if len(ranges) == 0 {
 		return nil, fmt.Errorf("unable to parse IP ranges [%s]", ipRangeString)

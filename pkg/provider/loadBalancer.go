@@ -59,6 +59,7 @@ func getDefaultLoadBalancerName(service *v1.Service) string {
 	return cloudprovider.DefaultLoadBalancerName(service)
 }
 
+//nolint
 func (k *kubevipLoadBalancerManager) deleteLoadBalancer(ctx context.Context, service *v1.Service) error {
 	klog.Infof("deleting service '%s' (%s)", service.Name, service.UID)
 
@@ -103,7 +104,7 @@ func (k *kubevipLoadBalancerManager) syncLoadBalancer(ctx context.Context, servi
 		existingServiceIPS = append(existingServiceIPS, svcs.Items[x].Labels["ipam-address"])
 	}
 
-  // If the LoadBalancer address is empty, then do a local IPAM lookup
+	// If the LoadBalancer address is empty, then do a local IPAM lookup
 	loadBalancerIP, err := discoverAddress(controllerCM, service.Namespace, k.cloudConfigMap, existingServiceIPS)
 
 	if err != nil {
@@ -130,7 +131,7 @@ func (k *kubevipLoadBalancerManager) syncLoadBalancer(ctx context.Context, servi
 		// Set IPAM address to Load Balancer Service
 		recentService.Spec.LoadBalancerIP = loadBalancerIP
 
-		// Update the actual service with teh address and the labels
+		// Update the actual service with the address and the labels
 		_, updateErr := k.kubeClient.CoreV1().Services(recentService.Namespace).Update(ctx, recentService, metav1.UpdateOptions{})
 		return updateErr
 	})
