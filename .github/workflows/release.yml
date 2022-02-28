@@ -17,8 +17,8 @@ jobs:
       - name: Login to DockerHub
         uses: docker/login-action@v1 
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          username: kubevip
+          password: ${{ secrets.DOCKERHUB_KUBEVIP_TOKEN }}
       - name: Login to Github Packages
         uses: docker/login-action@v1
         with:
