@@ -43,7 +43,7 @@ func (k *kubevipLoadBalancerManager) EnsureLoadBalancerDeleted(ctx context.Conte
 }
 
 func (k *kubevipLoadBalancerManager) GetLoadBalancer(ctx context.Context, clusterName string, service *v1.Service) (status *v1.LoadBalancerStatus, exists bool, err error) {
-	if service.Labels["implementation"] == "kube=vip" {
+	if service.Labels["implementation"] == "kube-vip" {
 		return &service.Status.LoadBalancer, true, nil
 	}
 	return nil, false, nil
