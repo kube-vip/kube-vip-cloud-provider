@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/kube-vip/kube-vip-cloud-provider/pkg/ipam"
 	v1 "k8s.io/api/core/v1"
@@ -82,12 +83,6 @@ func (k *kubevipLoadBalancerManager) syncLoadBalancer(ctx context.Context, servi
 		return &service.Status.LoadBalancer, nil
 	}
 
-	// Get all services in this namespace, that have the correct label
-	svcs, err := k.kubeClient.CoreV1().Services(service.Namespace).List(ctx, metav1.ListOptions{LabelSelector: "implementation=kube-vip"})
-	if err != nil {
-		return &service.Status.LoadBalancer, err
-	}
-
 	// Get the clound controller configuration map
 	controllerCM, err := k.GetConfigMap(ctx, KubeVipClientConfig, "kube-system")
 	if err != nil {
@@ -99,13 +94,34 @@ func (k *kubevipLoadBalancerManager) syncLoadBalancer(ctx context.Context, servi
 		}
 	}
 
+	// Get ip pool from configmap and determine if it is namespace specific or global
+	pool, global, err := discoverPool(controllerCM, service.Namespace, k.cloudConfigMap)
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Get all services in this namespace or globally, that have the correct label
+	var svcs *v1.ServiceList
+	if global {
+		svcs, err = k.kubeClient.CoreV1().Services("").List(ctx, metav1.ListOptions{LabelSelector: "implementation=kube-vip"})
+		if err != nil {
+			return &service.Status.LoadBalancer, err
+		}
+	} else {
+		svcs, err = k.kubeClient.CoreV1().Services(service.Namespace).List(ctx, metav1.ListOptions{LabelSelector: "implementation=kube-vip"})
+		if err != nil {
+			return &service.Status.LoadBalancer, err
+		}
+	}
+
 	var existingServiceIPS []string
 	for x := range svcs.Items {
 		existingServiceIPS = append(existingServiceIPS, svcs.Items[x].Labels["ipam-address"])
 	}
 
 	// If the LoadBalancer address is empty, then do a local IPAM lookup
-	loadBalancerIP, err := discoverAddress(controllerCM, service.Namespace, k.cloudConfigMap, existingServiceIPS)
+	loadBalancerIP, err := discoverAddress(service.Namespace, pool, existingServiceIPS)
 
 	if err != nil {
 		return nil, err
@@ -142,7 +158,7 @@ func (k *kubevipLoadBalancerManager) syncLoadBalancer(ctx context.Context, servi
 	return &service.Status.LoadBalancer, nil
 }
 
-func discoverAddress(cm *v1.ConfigMap, namespace, configMapName string, existingServiceIPS []string) (vip string, err error) {
+func discoverPool(cm *v1.ConfigMap, namespace, configMapName string) (pool string, global bool, err error) {
 	var cidr, ipRange string
 	var ok bool
 
@@ -156,16 +172,11 @@ func discoverAddress(cm *v1.ConfigMap, namespace, configMapName string, existing
 			klog.Info(fmt.Errorf("no global cidr config exists [cidr-global]"))
 		} else {
 			klog.Infof("Taking address from [cidr-global] pool")
+			return cidr, true, nil
 		}
 	} else {
 		klog.Infof("Taking address from [%s] pool", cidrKey)
-	}
-	if ok {
-		vip, err = ipam.FindAvailableHostFromCidr(namespace, cidr, existingServiceIPS)
-		if err != nil {
-			return "", err
-		}
-		return
+		return cidr, false, nil
 	}
 
 	// Find Range
@@ -178,16 +189,29 @@ func discoverAddress(cm *v1.ConfigMap, namespace, configMapName string, existing
 			klog.Info(fmt.Errorf("no global range config exists [range-global]"))
 		} else {
 			klog.Infof("Taking address from [range-global] pool")
+			return ipRange, true, nil
 		}
 	} else {
 		klog.Infof("Taking address from [%s] pool", rangeKey)
+		return ipRange, false, nil
 	}
-	if ok {
-		vip, err = ipam.FindAvailableHostFromRange(namespace, ipRange, existingServiceIPS)
+
+	return "", false, fmt.Errorf("no address pools could be found")
+}
+
+func discoverAddress(namespace, pool string, existingServiceIPS []string) (vip string, err error) {
+	// Check if ip pool contains a cidr, if not assume it is a range
+	if strings.Contains(pool, "/") {
+		vip, err = ipam.FindAvailableHostFromCidr(namespace, pool, existingServiceIPS)
 		if err != nil {
-			return vip, err
+			return "", err
 		}
-		return
+	} else {
+		vip, err = ipam.FindAvailableHostFromRange(namespace, pool, existingServiceIPS)
+		if err != nil {
+			return "", err
+		}
 	}
-	return "", fmt.Errorf("no IP address ranges could be found either range-global or range-<namespace>")
+
+	return vip, err
 }
