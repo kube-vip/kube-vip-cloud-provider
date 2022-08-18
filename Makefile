@@ -43,6 +43,8 @@ uninstall: clean
 fmt:
 	@gofmt -l -w $(SRC)
 
+image-amd64-build-only:
+	@docker buildx build  --platform linux/amd64 -t $(REPOSITORY)/$(TARGET):$(DOCKERTAG) .
 
 # For faster local builds
 image-amd64:
