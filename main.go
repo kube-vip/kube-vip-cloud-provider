@@ -22,23 +22,34 @@ import (
 	"os"
 	"time"
 
-	"github.com/spf13/pflag"
-	"k8s.io/component-base/logs"
-	"k8s.io/kubernetes/cmd/cloud-controller-manager/app"
-
-	_ "k8s.io/component-base/metrics/prometheus/version" // for version metric registration
-	// NOTE: Importing all in-tree cloud-providers is not required when
-	// implementing an out-of-tree cloud-provider.
-	_ "k8s.io/component-base/metrics/prometheus/clientgo" // load all the prometheus client-go plugins
-	_ "k8s.io/kubernetes/pkg/cloudprovider/providers"
-
 	"github.com/kube-vip/kube-vip-cloud-provider/pkg/provider"
+	"github.com/spf13/pflag"
+	"k8s.io/apimachinery/pkg/util/wait"
+	cloudprovider "k8s.io/cloud-provider"
+	"k8s.io/cloud-provider/app"
+	"k8s.io/cloud-provider/app/config"
+	"k8s.io/cloud-provider/options"
+	cliflag "k8s.io/component-base/cli/flag"
+	"k8s.io/component-base/logs"
+	_ "k8s.io/component-base/metrics/prometheus/clientgo" // for client metric registration
+	_ "k8s.io/component-base/metrics/prometheus/version"  // for version metric registration
+	"k8s.io/klog"
 )
 
 func main() {
 	rand.Seed(time.Now().UnixNano())
 
-	command := app.NewCloudControllerManagerCommand()
+	logs.InitLogs()
+	defer logs.FlushLogs()
+
+	opts, err := options.NewCloudControllerManagerOptions()
+	if err != nil {
+		klog.Fatalf("unable to initialize command options: %v", err)
+	}
+
+	fss := cliflag.NamedFlagSets{}
+
+	command := app.NewCloudControllerManagerCommand(opts, cloudInitializer, controllerInitializers(), fss, wait.NeverStop)
 
 	command.Flags().BoolVar(&provider.OutSideCluster, "OutSideCluster", false, "Start Controller outside of cluster")
 
@@ -69,14 +80,27 @@ func main() {
 		}
 	})
 
-	// TODO: once we switch everything over to Cobra commands, we can go back to calling
-	// utilflag.InitFlags() (by removing its pflag.Parse() call). For now, we have to set the
-	// normalize func and add the go flag set by hand.
-	// utilflag.InitFlags()
-	logs.InitLogs()
-	defer logs.FlushLogs()
-
 	if err := command.Execute(); err != nil {
 		os.Exit(1)
 	}
+}
+
+// only enable service controller
+func controllerInitializers() map[string]app.ControllerInitFuncConstructor {
+	return map[string]app.ControllerInitFuncConstructor{
+		"service": app.DefaultInitFuncConstructors["service"],
+	}
+}
+
+func cloudInitializer(_ *config.CompletedConfig) cloudprovider.Interface {
+	// initialize cloud provider with the cloud provider name and config file provided
+	cloud, err := cloudprovider.InitCloudProvider(provider.ProviderName, "")
+	if err != nil {
+		klog.Fatalf("Cloud provider could not be initialized: %v", err)
+	}
+	if cloud == nil {
+		klog.Fatalf("Cloud provider is nil")
+	}
+
+	return cloud
 }
