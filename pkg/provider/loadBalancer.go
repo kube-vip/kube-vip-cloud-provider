@@ -15,7 +15,7 @@ import (
 	"k8s.io/klog"
 )
 
-//kubevipLoadBalancerManager -
+// kubevipLoadBalancerManager -
 type kubevipLoadBalancerManager struct {
 	kubeClient     *kubernetes.Clientset
 	nameSpace      string
@@ -60,7 +60,7 @@ func getDefaultLoadBalancerName(service *v1.Service) string {
 	return cloudprovider.DefaultLoadBalancerName(service)
 }
 
-//nolint
+// nolint
 func (k *kubevipLoadBalancerManager) deleteLoadBalancer(ctx context.Context, service *v1.Service) error {
 	klog.Infof("deleting service '%s' (%s)", service.Name, service.UID)
 
@@ -200,8 +200,11 @@ func discoverPool(cm *v1.ConfigMap, namespace, configMapName string) (pool strin
 }
 
 func discoverAddress(namespace, pool string, existingServiceIPS []string) (vip string, err error) {
+	// Check if DHCP is required
+	if pool == "0.0.0.0/32" {
+		vip = "0.0.0.0"
 	// Check if ip pool contains a cidr, if not assume it is a range
-	if strings.Contains(pool, "/") {
+	} else if strings.Contains(pool, "/") {
 		vip, err = ipam.FindAvailableHostFromCidr(namespace, pool, existingServiceIPS)
 		if err != nil {
 			return "", err

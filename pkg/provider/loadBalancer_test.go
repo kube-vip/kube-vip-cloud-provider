@@ -68,7 +68,7 @@ func Test_DiscoveryPoolRange(t *testing.T) {
 		data    v1.ConfigMap
 		ipRange string
 	}
-	
+
 	dummy := new(v1.ConfigMap)
 	dummy.Data = map[string]string{}
 	dummy.Data["range-dummystart"] = "172.16.0.1-172.16.0.254"

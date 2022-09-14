@@ -52,7 +52,7 @@ func IPStr2Int(ip string) uint {
 	return uint(b[3]) | uint(b[2])<<8 | uint(b[1])<<16 | uint(b[0])<<24
 }
 
-//IPInt2Str - Converts the IP address in integer format to an string
+// IPInt2Str - Converts the IP address in integer format to an string
 func IPInt2Str(i uint) string {
 	ip := make(net.IP, net.IPv4len)
 	ip[0] = byte(i >> 24)
