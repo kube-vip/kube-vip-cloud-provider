@@ -1,6 +1,6 @@
 # kube-vip-cloud-provider
 
-The [Kube-Vip](https://kube-vip.io) cloud provider is a general purpose cloud-provider for on-prem bare-metal or virtualised environments. It's designed to work with the [kube-vip](https://kube-vip.io) project however if a load-balancer solution follows the [Kubernetes](https://kubernetes.io) conventions then this cloud-provider will provide IP addresses that another solution can advertise. 
+The [Kube-Vip](https://kube-vip.io) cloud provider is a general purpose cloud-provider for on-prem bare-metal or virtualised environments. It's designed to work with the [kube-vip](https://kube-vip.io) project however if a load-balancer solution follows the [Kubernetes](https://kubernetes.io) conventions then this cloud-provider will provide IP addresses that another solution can advertise.
 
 ## Architecture
 
@@ -23,17 +23,19 @@ We can apply the controller manifest directly from this repository to get the la
 $ kubectl apply -f https://raw.githubusercontent.com/kube-vip/kube-vip-cloud-provider/main/manifest/kube-vip-cloud-controller.yaml
 ```
 
-It uses a `statefulSet` and can always be viewed with the following command:
+It uses a `Deployment` and can always be viewed with the following command:
 
 ```
-kubectl describe pods -n kube-system kube-vip-cloud-provider-0
+kubectl describe deployment/kube-vip-cloud-provider -n kube-system
+POD_NAME=$(kubectl get po -n kube-system | grep kube-vip-cloud-provider | cut -d' ' -f1)
+kubectl describe pod/$POD_NAME -n kube-system
 ```
 
 ## Global and namespace pools
 
 ### Global pool
 
-Any service in any namespace will take an address from the global pool `cidr/range`-global. 
+Any service in any namespace will take an address from the global pool `cidr/range`-global.
 
 ### Namespace pool
 

@@ -35,19 +35,22 @@ subjects:
   namespace: kube-system
 ---
 apiVersion: apps/v1
-kind: StatefulSet
+kind: Deployment
 metadata:
   name: kube-vip-cloud-provider
   namespace: kube-system
 spec:
-  serviceName: kube-vip-cloud-provider
-  podManagementPolicy: OrderedReady
   replicas: 1
   revisionHistoryLimit: 10
   selector:
     matchLabels:
       app: kube-vip
       component: kube-vip-cloud-provider
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
   template:
     metadata:
       labels:
@@ -61,10 +64,25 @@ spec:
         image: ghcr.io/kube-vip/kube-vip-cloud-provider:v0.0.3
         name: kube-vip-cloud-provider
         imagePullPolicy: Always
-        resources: {}
       dnsPolicy: ClusterFirst
       restartPolicy: Always
-      schedulerName: default-scheduler
-      securityContext: {}
       terminationGracePeriodSeconds: 30
       serviceAccountName: kube-vip-cloud-controller
+      tolerations:
+      - key: node-role.kubernetes.io/master
+        effect: NoSchedule
+      - key: node-role.kubernetes.io/control-plane
+        effect: NoSchedule
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 10
+            preference:
+              matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: Exists
+          - weight: 10
+            preference:
+              matchExpressions:
+              - key: node-role.kubernetes.io/master
+                operator: Exists
