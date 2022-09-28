@@ -13,6 +13,7 @@ The `kube-vip-cloud-provider` will only implement the `loadBalancer` functionali
 - Multiple pools by CIDR per namespace
 - Multiple IP ranges per namespace (handles overlapping ranges)
 - Setting of static addresses through `--load-balancer-ip=x.x.x.x`
+- Setting the special IP `0.0.0.0` for DHCP workflow.
 
 ## Installing the `kube-vip-cloud-provider`
 
@@ -68,6 +69,10 @@ kubectl create configmap --namespace kube-system kubevip --from-literal range-gl
 ## Multiple pools or ranges
 
 We can apply multiple pools or ranges by seperating them with commas.. i.e. `192.168.0.200/30,192.168.0.200/29` or `192.168.0.10-192.168.0.11,192.168.0.10-192.168.0.13`
+
+## Special DHCP CIDR
+
+Set the CIDR to `0.0.0.0/32`, that will make the controller to give all _LoadBalancers_ the IP `0.0.0.0`.
 
 ## Debugging
 
