@@ -15,14 +15,23 @@ import (
 	"k8s.io/klog"
 )
 
+const (
+	// this annotation is for specifying IPs for a loadbalancer
+	// use plural for dual stack support in the future
+	// Example: kube-vip.io/loadbalancerIPs: 10.1.2.3
+	loadbalancerIPsAnnotations = "kube-vip.io/loadbalancerIPs"
+	implementationLabelKey     = "implementation"
+	implementationLabelValue   = "kube-vip"
+)
+
 // kubevipLoadBalancerManager -
 type kubevipLoadBalancerManager struct {
-	kubeClient     *kubernetes.Clientset
+	kubeClient     kubernetes.Interface
 	nameSpace      string
 	cloudConfigMap string
 }
 
-func newLoadBalancer(kubeClient *kubernetes.Clientset, ns, cm string) cloudprovider.LoadBalancer {
+func newLoadBalancer(kubeClient kubernetes.Interface, ns, cm string) cloudprovider.LoadBalancer {
 	k := &kubevipLoadBalancerManager{
 		kubeClient:     kubeClient,
 		nameSpace:      ns,
@@ -44,7 +53,7 @@ func (k *kubevipLoadBalancerManager) EnsureLoadBalancerDeleted(ctx context.Conte
 }
 
 func (k *kubevipLoadBalancerManager) GetLoadBalancer(ctx context.Context, clusterName string, service *v1.Service) (status *v1.LoadBalancerStatus, exists bool, err error) {
-	if service.Labels["implementation"] == "kube-vip" {
+	if service.Labels[implementationLabelKey] == implementationLabelValue {
 		return &service.Status.LoadBalancer, true, nil
 	}
 	return nil, false, nil
@@ -80,15 +89,38 @@ func (k *kubevipLoadBalancerManager) syncLoadBalancer(ctx context.Context, servi
 
 	// The loadBalancer address has already been populated
 	if service.Spec.LoadBalancerIP != "" {
+		if v, ok := service.Annotations[loadbalancerIPsAnnotations]; !ok || len(v) == 0 {
+			klog.Errorf("service.Spec.LoadBalancerIP is defined but annotations '%s' is not, assume it's a legacy service, updates its annotations", loadbalancerIPsAnnotations)
+			// assume it's legacy service, need to update the annotation.
+			err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+				recentService, getErr := k.kubeClient.CoreV1().Services(service.Namespace).Get(ctx, service.Name, metav1.GetOptions{})
+				if getErr != nil {
+					return getErr
+				}
+				if recentService.Annotations == nil {
+					recentService.Annotations = make(map[string]string)
+				}
+				recentService.Annotations[loadbalancerIPsAnnotations] = service.Spec.LoadBalancerIP
+				// remove ip-address label
+				delete(recentService.Labels, "ip-address")
+
+				// Update the actual service with the annotations
+				_, updateErr := k.kubeClient.CoreV1().Services(recentService.Namespace).Update(ctx, recentService, metav1.UpdateOptions{})
+				return updateErr
+			})
+			if err != nil {
+				return nil, fmt.Errorf("error updating Service Spec [%s] : %v", service.Name, err)
+			}
+		}
 		return &service.Status.LoadBalancer, nil
 	}
 
 	// Get the clound controller configuration map
-	controllerCM, err := k.GetConfigMap(ctx, KubeVipClientConfig, "kube-system")
+	controllerCM, err := k.GetConfigMap(ctx, KubeVipClientConfig, KubeVipClientConfigNamespace)
 	if err != nil {
-		klog.Errorf("Unable to retrieve kube-vip ipam config from configMap [%s] in kube-system", KubeVipClientConfig)
+		klog.Errorf("Unable to retrieve kube-vip ipam config from configMap [%s] in %s", KubeVipClientConfig, KubeVipClientConfigNamespace)
 		// TODO - determine best course of action, create one if it doesn't exist
-		controllerCM, err = k.CreateConfigMap(ctx, KubeVipClientConfig, "kube-system")
+		controllerCM, err = k.CreateConfigMap(ctx, KubeVipClientConfig, KubeVipClientConfigNamespace)
 		if err != nil {
 			return nil, err
 		}
@@ -104,12 +136,12 @@ func (k *kubevipLoadBalancerManager) syncLoadBalancer(ctx context.Context, servi
 	// Get all services in this namespace or globally, that have the correct label
 	var svcs *v1.ServiceList
 	if global {
-		svcs, err = k.kubeClient.CoreV1().Services("").List(ctx, metav1.ListOptions{LabelSelector: "implementation=kube-vip"})
+		svcs, err = k.kubeClient.CoreV1().Services("").List(ctx, metav1.ListOptions{LabelSelector: getKubevipImplementationLabel()})
 		if err != nil {
 			return &service.Status.LoadBalancer, err
 		}
 	} else {
-		svcs, err = k.kubeClient.CoreV1().Services(service.Namespace).List(ctx, metav1.ListOptions{LabelSelector: "implementation=kube-vip"})
+		svcs, err = k.kubeClient.CoreV1().Services(service.Namespace).List(ctx, metav1.ListOptions{LabelSelector: getKubevipImplementationLabel()})
 		if err != nil {
 			return &service.Status.LoadBalancer, err
 		}
@@ -117,7 +149,7 @@ func (k *kubevipLoadBalancerManager) syncLoadBalancer(ctx context.Context, servi
 
 	var existingServiceIPS []string
 	for x := range svcs.Items {
-		existingServiceIPS = append(existingServiceIPS, svcs.Items[x].Labels["ipam-address"])
+		existingServiceIPS = append(existingServiceIPS, svcs.Items[x].Annotations[loadbalancerIPsAnnotations])
 	}
 
 	// If the LoadBalancer address is empty, then do a local IPAM lookup
@@ -141,9 +173,15 @@ func (k *kubevipLoadBalancerManager) syncLoadBalancer(ctx context.Context, servi
 			recentService.Labels = make(map[string]string)
 		}
 		// Set Label for service lookups
-		recentService.Labels["implementation"] = "kube-vip"
-		recentService.Labels["ipam-address"] = loadBalancerIP
+		recentService.Labels[implementationLabelKey] = implementationLabelValue
 
+		if recentService.Annotations == nil {
+			recentService.Annotations = make(map[string]string)
+		}
+		// use annotation instead of label to support ipv6
+		recentService.Annotations[loadbalancerIPsAnnotations] = loadBalancerIP
+
+		// this line will be removed once kube-vip can recognize annotations
 		// Set IPAM address to Load Balancer Service
 		recentService.Spec.LoadBalancerIP = loadBalancerIP
 
@@ -152,7 +190,7 @@ func (k *kubevipLoadBalancerManager) syncLoadBalancer(ctx context.Context, servi
 		return updateErr
 	})
 	if retryErr != nil {
-		return nil, fmt.Errorf("error updating Service Spec [%s] : %v", service.Name, err)
+		return nil, fmt.Errorf("error updating Service Spec [%s] : %v", service.Name, retryErr)
 	}
 
 	return &service.Status.LoadBalancer, nil
@@ -203,7 +241,7 @@ func discoverAddress(namespace, pool string, existingServiceIPS []string) (vip s
 	// Check if DHCP is required
 	if pool == "0.0.0.0/32" {
 		vip = "0.0.0.0"
-	// Check if ip pool contains a cidr, if not assume it is a range
+		// Check if ip pool contains a cidr, if not assume it is a range
 	} else if strings.Contains(pool, "/") {
 		vip, err = ipam.FindAvailableHostFromCidr(namespace, pool, existingServiceIPS)
 		if err != nil {
@@ -217,4 +255,8 @@ func discoverAddress(namespace, pool string, existingServiceIPS []string) (vip s
 	}
 
 	return vip, err
+}
+
+func getKubevipImplementationLabel() string {
+	return fmt.Sprintf("%s=%s", implementationLabelKey, implementationLabelValue)
 }
