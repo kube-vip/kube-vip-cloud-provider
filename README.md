@@ -4,7 +4,9 @@ The [Kube-Vip](https://kube-vip.io) cloud provider is a general purpose cloud-pr
 
 ## Architecture
 
-The `kube-vip-cloud-provider` will only implement the `loadBalancer` functionality of the out-of-tree cloud-provider functionality. The design is to keep be completely decoupled from any other technologies other than the Kubernetes API, this means that the only contract is between the kube-vip-cloud-provider and the kubernetes services schema. The cloud-provider wont generate configuration information in any other format, it's sole purpose is to ensure that a new service of type:`loadBalancer` has been assigned an address from an address pool. It does this by updating the `<service>.spec.loadBalancerIP` with an address from it's IPAM, the responsibility of advertising that address **and** updating the `<service>.status.loadBalancer.ingress.ip` is left to the actual load-balancer such as [kube-vip.io](https://kube-vip.io).
+The `kube-vip-cloud-provider` will only implement the `loadBalancer` functionality of the out-of-tree cloud-provider functionality. The design is to keep be completely decoupled from any other technologies other than the Kubernetes API, this means that the only contract is between the kube-vip-cloud-provider and the kubernetes services schema. The cloud-provider wont generate configuration information in any other format, it's sole purpose is to ensure that a new service of type:`loadBalancer` has been assigned an address from an address pool. It does this by updating the `<service>.annotations.kube-vip.io/loadbalancerIPs` and `<service>.spec.loadBalancerIP` with an address from it's IPAM, the responsibility of advertising that address **and** updating the `<service>.status.loadBalancer.ingress.ip` is left to the actual load-balancer such as [kube-vip.io](https://kube-vip.io).
+
+`<service>.spec.loadBalancerIP` [is deprecated](https://github.com/kubernetes/kubernetes/pull/107235) in k8s 1.24, kube-vip-cloud-provider will only updates the annotations `<service>.annotations.kube-vip.io/loadbalancerIPs` in the future.
 
 ## IP address functionality
 

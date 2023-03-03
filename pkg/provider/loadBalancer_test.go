@@ -1,10 +1,13 @@
 package provider
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes/fake"
 )
 
 func Test_DiscoveryPoolCIDR(t *testing.T) {
@@ -213,6 +216,127 @@ func Test_DiscoveryAddressRange(t *testing.T) {
 			if !assert.EqualValues(t, gotString, tt.want) {
 				t.Errorf("discoverAddress() returned: %s, expected: %s", gotString, tt.want)
 			}
+		})
+	}
+}
+
+func Test_syncLoadBalancer(t *testing.T) {
+
+	tests := []struct {
+		name             string
+		serviceNamespace string
+		serviceName      string
+
+		originalService v1.Service
+		poolConfigMap   *v1.ConfigMap
+		expectedService v1.Service
+		wantErr         bool
+	}{
+		{
+			name: "add new annotation to legacy service which already has spec.loadbalancerIP",
+			originalService: v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test",
+					Name:      "name",
+					Labels: map[string]string{
+						"implementation": "kube-vip",
+					},
+				},
+				Spec: v1.ServiceSpec{
+					LoadBalancerIP: "192.168.1.1",
+				},
+			},
+			expectedService: v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test",
+					Name:      "name",
+					Labels: map[string]string{
+						"implementation": "kube-vip",
+					},
+					Annotations: map[string]string{
+						"kube-vip.io/loadbalancerIPs": "192.168.1.1",
+					},
+				},
+				Spec: v1.ServiceSpec{
+					LoadBalancerIP: "192.168.1.1",
+				},
+			},
+		},
+
+		{
+			name: "add new annotation and loadbalancerIP to new service",
+			originalService: v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test",
+					Name:      "name",
+				},
+				Spec: v1.ServiceSpec{},
+			},
+			poolConfigMap: &v1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      KubeVipClientConfig,
+					Namespace: KubeVipClientConfigNamespace,
+				},
+				Data: map[string]string{
+					"cidr-global": "192.168.1.1/24",
+				},
+			},
+			expectedService: v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test",
+					Name:      "name",
+					Labels: map[string]string{
+						"implementation": "kube-vip",
+					},
+					Annotations: map[string]string{
+						"kube-vip.io/loadbalancerIPs": "192.168.1.1",
+					},
+				},
+				Spec: v1.ServiceSpec{
+					LoadBalancerIP: "192.168.1.1",
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mgr := &kubevipLoadBalancerManager{
+				kubeClient:     fake.NewSimpleClientset(),
+				nameSpace:      "default",
+				cloudConfigMap: KubeVipCloudConfig,
+			}
+
+			// create dummy service
+			_, err := mgr.kubeClient.CoreV1().Services("test").Create(context.Background(), &tt.originalService, metav1.CreateOptions{})
+			if err != nil {
+				t.Error(err)
+			}
+
+			// create pool if needed
+			if tt.poolConfigMap != nil {
+				_, err := mgr.kubeClient.CoreV1().ConfigMaps(KubeVipClientConfigNamespace).Create(context.Background(), tt.poolConfigMap, metav1.CreateOptions{})
+				if err != nil {
+					t.Error(err)
+				}
+			}
+
+			_, err = mgr.syncLoadBalancer(context.Background(), &tt.originalService)
+			if err != nil {
+				t.Error(err)
+			}
+
+			if (err != nil) != tt.wantErr {
+				t.Errorf("discoverAddress() error: %v, expected: %v", err, tt.wantErr)
+				return
+			}
+
+			resService, err := mgr.kubeClient.CoreV1().Services("test").Get(context.Background(), "name", metav1.GetOptions{})
+			if err != nil {
+				t.Error(err)
+			}
+
+			assert.EqualValues(t, *resService, tt.expectedService)
 		})
 	}
 }

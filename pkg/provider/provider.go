@@ -28,6 +28,9 @@ const (
 	//KubeVipClientConfig is the default name of the load balancer config Map
 	KubeVipClientConfig = "kubevip"
 
+	//KubeVipClientConfig is the default namespace of the load balancer config Map
+	KubeVipClientConfigNamespace = "kube-system"
+
 	//KubeVipServicesKey is the key in the ConfigMap that has the services configuration
 	KubeVipServicesKey = "kubevip-services"
 )
