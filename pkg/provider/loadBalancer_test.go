@@ -233,13 +233,14 @@ func Test_syncLoadBalancer(t *testing.T) {
 		wantErr         bool
 	}{
 		{
-			name: "add new annotation to legacy service which already has spec.loadbalancerIP",
+			name: "add new annotation to legacy service which already has spec.loadbalancerIP, remove legacy label",
 			originalService: v1.Service{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "test",
 					Name:      "name",
 					Labels: map[string]string{
 						"implementation": "kube-vip",
+						"ipam-address":   "192.168.1.1",
 					},
 				},
 				Spec: v1.ServiceSpec{
@@ -327,7 +328,7 @@ func Test_syncLoadBalancer(t *testing.T) {
 			}
 
 			if (err != nil) != tt.wantErr {
-				t.Errorf("discoverAddress() error: %v, expected: %v", err, tt.wantErr)
+				t.Errorf("syncLoadBalancer() error: %v, expected: %v", err, tt.wantErr)
 				return
 			}
 

@@ -22,6 +22,7 @@ const (
 	loadbalancerIPsAnnotations = "kube-vip.io/loadbalancerIPs"
 	implementationLabelKey     = "implementation"
 	implementationLabelValue   = "kube-vip"
+	legacyIpamAddressLabelKey  = "ipam-address"
 )
 
 // kubevipLoadBalancerManager -
@@ -90,7 +91,7 @@ func (k *kubevipLoadBalancerManager) syncLoadBalancer(ctx context.Context, servi
 	// The loadBalancer address has already been populated
 	if service.Spec.LoadBalancerIP != "" {
 		if v, ok := service.Annotations[loadbalancerIPsAnnotations]; !ok || len(v) == 0 {
-			klog.Errorf("service.Spec.LoadBalancerIP is defined but annotations '%s' is not, assume it's a legacy service, updates its annotations", loadbalancerIPsAnnotations)
+			klog.Warningf("service.Spec.LoadBalancerIP is defined but annotations '%s' is not, assume it's a legacy service, updates its annotations", loadbalancerIPsAnnotations)
 			// assume it's legacy service, need to update the annotation.
 			err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 				recentService, getErr := k.kubeClient.CoreV1().Services(service.Namespace).Get(ctx, service.Name, metav1.GetOptions{})
@@ -101,8 +102,8 @@ func (k *kubevipLoadBalancerManager) syncLoadBalancer(ctx context.Context, servi
 					recentService.Annotations = make(map[string]string)
 				}
 				recentService.Annotations[loadbalancerIPsAnnotations] = service.Spec.LoadBalancerIP
-				// remove ip-address label
-				delete(recentService.Labels, "ip-address")
+				// remove ipam-address label
+				delete(recentService.Labels, legacyIpamAddressLabelKey)
 
 				// Update the actual service with the annotations
 				_, updateErr := k.kubeClient.CoreV1().Services(recentService.Namespace).Update(ctx, recentService, metav1.UpdateOptions{})
