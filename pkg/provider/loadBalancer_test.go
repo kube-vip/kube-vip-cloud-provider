@@ -2,9 +2,11 @@ package provider
 
 import (
 	"context"
+	"net/netip"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"go4.org/netipx"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
@@ -22,6 +24,7 @@ func Test_DiscoveryPoolCIDR(t *testing.T) {
 	dummy.Data["cidr-global"] = "192.168.1.1/24"
 	dummy.Data["cidr-system"] = "10.10.10.8/29"
 	dummy.Data["cidr-dummyend"] = "172.16.0.2/24"
+	dummy.Data["cidr-ipv6"] = "2001::10/127"
 
 	tests := []struct {
 		name     string
@@ -37,6 +40,16 @@ func Test_DiscoveryPoolCIDR(t *testing.T) {
 				"system",
 			},
 			want:     "10.10.10.8/29",
+			wantBool: false,
+			wantErr:  false,
+		},
+		{
+			name: "ipv6, cidr lookup for known namespace",
+			args: args{
+				*dummy,
+				"ipv6",
+			},
+			want:     "2001::10/127",
 			wantBool: false,
 			wantErr:  false,
 		},
@@ -78,6 +91,7 @@ func Test_DiscoveryPoolRange(t *testing.T) {
 	dummy.Data["range-global"] = "192.168.1.1-192.168.1.254"
 	dummy.Data["range-system"] = "10.10.10.8-10.10.10.15"
 	dummy.Data["range-dummyend"] = "172.16.1.1-172.16.1.254"
+	dummy.Data["cidr-ipv6"] = "2001::10-2001::20"
 
 	tests := []struct {
 		name     string
@@ -93,6 +107,16 @@ func Test_DiscoveryPoolRange(t *testing.T) {
 				"system",
 			},
 			want:     "10.10.10.8-10.10.10.15",
+			wantBool: false,
+			wantErr:  false,
+		},
+		{
+			name: "ipv6, range lookup for known namespace",
+			args: args{
+				*dummy,
+				"ipv6",
+			},
+			want:     "2001::10-2001::20",
 			wantBool: false,
 			wantErr:  false,
 		},
@@ -148,18 +172,53 @@ func Test_DiscoveryAddressCIDR(t *testing.T) {
 		{
 			name: "available ip search for unknown namespace",
 			args: args{
-				"system",
+				"unknwon",
 				"192.168.1.1/24",
 				[]string{"10.10.10.8", "172.16.0.3", "192.168.1.1", "10.10.10.9", "10.10.10.10", "172.16.0.4", "192.168.1.2", "10.10.10.12"},
 			},
 			want:    "192.168.1.3",
 			wantErr: false,
 		},
+		{
+			name: "ipv6, available ip search for known namespace",
+			args: args{
+				"system",
+				"fe80::10/126",
+				[]string{"fe80::10", "fe80::11", "fe80::12"},
+			},
+			want:    "fe80::13",
+			wantErr: false,
+		},
+		{
+			name: "ipv6, available ip search for unknown namespace",
+			args: args{
+				"unknwon",
+				"fe80::10/126",
+				[]string{"fe80::10", "fe80::11", "fe80::12"},
+			},
+			want:    "fe80::13",
+			wantErr: false,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotString, err := discoverAddress(tt.args.namespace, tt.args.pool, tt.args.existingServiceIPS)
+			builder := &netipx.IPSetBuilder{}
+			for i := range tt.args.existingServiceIPS {
+				addr, err := netip.ParseAddr(tt.args.existingServiceIPS[i])
+				if err != nil {
+					t.Errorf("discoverAddress() error = %v", err)
+					return
+				}
+				builder.Add(addr)
+			}
+			s, err := builder.IPSet()
+			if err != nil {
+				t.Errorf("discoverAddress() error = %v", err)
+				return
+			}
+
+			gotString, err := discoverAddress(tt.args.namespace, tt.args.pool, s)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("discoverAddress() error: %v, expected: %v", err, tt.wantErr)
 				return
@@ -197,18 +256,53 @@ func Test_DiscoveryAddressRange(t *testing.T) {
 		{
 			name: "available ip search for unknown namespace",
 			args: args{
-				"system",
+				"unknown",
 				"192.168.1.1-192.168.1.254",
 				[]string{"10.10.10.8", "172.16.0.3", "192.168.1.1", "10.10.10.9", "10.10.10.10", "172.16.0.4", "192.168.1.2", "10.10.10.12"},
 			},
 			want:    "192.168.1.3",
 			wantErr: false,
 		},
+		{
+			name: "available ip search for known namespace",
+			args: args{
+				"system",
+				"fe80::ffff-fe80::1:3",
+				[]string{"fe80::ffff", "fe80::1:0", "fe80::1:1"},
+			},
+			want:    "fe80::1:2",
+			wantErr: false,
+		},
+		{
+			name: "available ip search for unknown namespace",
+			args: args{
+				"unknown",
+				"fe80::ffff-fe80::1:3",
+				[]string{"fe80::ffff", "fe80::1:0", "fe80::1:1"},
+			},
+			want:    "fe80::1:2",
+			wantErr: false,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotString, err := discoverAddress(tt.args.namespace, tt.args.pool, tt.args.existingServiceIPS)
+			builder := &netipx.IPSetBuilder{}
+			for i := range tt.args.existingServiceIPS {
+				addr, err := netip.ParseAddr(tt.args.existingServiceIPS[i])
+				if err != nil {
+					t.Errorf("discoverAddress() error = %v", err)
+					return
+				}
+				builder.Add(addr)
+			}
+			s, err := builder.IPSet()
+			if err != nil {
+				t.Errorf("discoverAddress() error = %v", err)
+				return
+			}
+
+			gotString, err := discoverAddress(tt.args.namespace, tt.args.pool, s)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("discoverAddress() error: %v, expected: %v", err, tt.wantErr)
 				return
@@ -263,7 +357,6 @@ func Test_syncLoadBalancer(t *testing.T) {
 				},
 			},
 		},
-
 		{
 			name: "add new annotation and loadbalancerIP to new service",
 			originalService: v1.Service{
@@ -295,6 +388,40 @@ func Test_syncLoadBalancer(t *testing.T) {
 				},
 				Spec: v1.ServiceSpec{
 					LoadBalancerIP: "192.168.1.1",
+				},
+			},
+		},
+		{
+			name: "ipv6, add new annotation and loadbalancerIP to new service",
+			originalService: v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test",
+					Name:      "name",
+				},
+				Spec: v1.ServiceSpec{},
+			},
+			poolConfigMap: &v1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      KubeVipClientConfig,
+					Namespace: KubeVipClientConfigNamespace,
+				},
+				Data: map[string]string{
+					"cidr-global": "fe80::10/126",
+				},
+			},
+			expectedService: v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test",
+					Name:      "name",
+					Labels: map[string]string{
+						"implementation": "kube-vip",
+					},
+					Annotations: map[string]string{
+						"kube-vip.io/loadbalancerIPs": "fe80::10",
+					},
+				},
+				Spec: v1.ServiceSpec{
+					LoadBalancerIP: "fe80::10",
 				},
 			},
 		},

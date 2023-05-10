@@ -158,9 +158,13 @@ func (k *kubevipLoadBalancerManager) syncLoadBalancer(ctx context.Context, servi
 		}
 		builder.Add(addr)
 	}
+	inUseSet, err := builder.IPSet()
+	if err != nil {
+		return nil, err
+	}
 
 	// If the LoadBalancer address is empty, then do a local IPAM lookup
-	loadBalancerIP, err := discoverAddress(service.Namespace, pool, builder.IPSet())
+	loadBalancerIP, err := discoverAddress(service.Namespace, pool, inUseSet)
 
 	if err != nil {
 		return nil, err
