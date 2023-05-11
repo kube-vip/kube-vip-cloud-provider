@@ -5,7 +5,7 @@ TARGET := kube-vip-cloud-provider
 .DEFAULT_GOAL: $(TARGET)
 
 # These will be provided to the target
-VERSION := v0.0.4
+VERSION := v0.0.5
 BUILD := `git rev-parse HEAD`
 
 # Operating System Default (LINUX)
