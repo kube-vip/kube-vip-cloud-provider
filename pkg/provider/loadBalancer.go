@@ -3,9 +3,11 @@ package provider
 import (
 	"context"
 	"fmt"
+	"net/netip"
 	"strings"
 
 	"github.com/kube-vip/kube-vip-cloud-provider/pkg/ipam"
+	"go4.org/netipx"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -148,13 +150,21 @@ func (k *kubevipLoadBalancerManager) syncLoadBalancer(ctx context.Context, servi
 		}
 	}
 
-	var existingServiceIPS []string
+	builder := &netipx.IPSetBuilder{}
 	for x := range svcs.Items {
-		existingServiceIPS = append(existingServiceIPS, svcs.Items[x].Annotations[loadbalancerIPsAnnotations])
+		addr, err := netip.ParseAddr(svcs.Items[x].Annotations[loadbalancerIPsAnnotations])
+		if err != nil {
+			return nil, err
+		}
+		builder.Add(addr)
+	}
+	inUseSet, err := builder.IPSet()
+	if err != nil {
+		return nil, err
 	}
 
 	// If the LoadBalancer address is empty, then do a local IPAM lookup
-	loadBalancerIP, err := discoverAddress(service.Namespace, pool, existingServiceIPS)
+	loadBalancerIP, err := discoverAddress(service.Namespace, pool, inUseSet)
 
 	if err != nil {
 		return nil, err
@@ -238,18 +248,18 @@ func discoverPool(cm *v1.ConfigMap, namespace, configMapName string) (pool strin
 	return "", false, fmt.Errorf("no address pools could be found")
 }
 
-func discoverAddress(namespace, pool string, existingServiceIPS []string) (vip string, err error) {
+func discoverAddress(namespace, pool string, inUseIPSet *netipx.IPSet) (vip string, err error) {
 	// Check if DHCP is required
 	if pool == "0.0.0.0/32" {
 		vip = "0.0.0.0"
 		// Check if ip pool contains a cidr, if not assume it is a range
 	} else if strings.Contains(pool, "/") {
-		vip, err = ipam.FindAvailableHostFromCidr(namespace, pool, existingServiceIPS)
+		vip, err = ipam.FindAvailableHostFromCidr(namespace, pool, inUseIPSet)
 		if err != nil {
 			return "", err
 		}
 	} else {
-		vip, err = ipam.FindAvailableHostFromRange(namespace, pool, existingServiceIPS)
+		vip, err = ipam.FindAvailableHostFromRange(namespace, pool, inUseIPSet)
 		if err != nil {
 			return "", err
 		}
