@@ -259,7 +259,7 @@ func TestFindAvailableHostFromRange(t *testing.T) {
 			want: "fe80::13",
 		},
 		{
-			name: "single range, three addresses",
+			name: "ipv6, single range, three addresses",
 			args: args{
 				namespace:        "default2",
 				ipRange:          "fe80::13-fe80::15",
@@ -268,7 +268,7 @@ func TestFindAvailableHostFromRange(t *testing.T) {
 			want: "fe80::13",
 		},
 		{
-			name: "single range, across third octet",
+			name: "ipv6, single range, across third octet",
 			args: args{
 				namespace:        "default2",
 				ipRange:          "fe80::ffff-fe80::1:3",
@@ -277,7 +277,7 @@ func TestFindAvailableHostFromRange(t *testing.T) {
 			want: "fe80::ffff",
 		},
 		{
-			name: "two ranges, 5 addresses",
+			name: "ipv6, two ranges, 5 addresses",
 			args: args{
 				namespace:        "default2",
 				ipRange:          "fe80::10-fe80::12,fe81::20-fe81::21",
@@ -374,7 +374,7 @@ func TestFindAvailableHostFromCIDR(t *testing.T) {
 			want: "2001::49fe",
 		},
 		{
-			name: "no ip available",
+			name: "ipv6, no ip available",
 			args: args{
 				namespace:        "default2",
 				cidr:             "2001::49fe/127",
@@ -383,7 +383,7 @@ func TestFindAvailableHostFromCIDR(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "dual entry, overlap address",
+			name: "ipv6, dual entry, overlap address",
 			args: args{
 				namespace:        "default2",
 				cidr:             "2001::10/126,2001::12/127",

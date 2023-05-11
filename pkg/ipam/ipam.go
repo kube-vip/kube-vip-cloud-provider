@@ -115,7 +115,7 @@ func FindAvailableHostFromCidr(namespace, cidr string, inUseIPSet *netipx.IPSet)
 	// TODO - currently we search (incrementally) through the list of hosts
 	addr, err := FindFreeAddress(poolIPSet, inUseIPSet)
 	if err != nil {
-		return "", fmt.Errorf("no addresses available in [%s] range [%s]", namespace, cidr)
+		return "", fmt.Errorf("no addresses available in [%s] cidr [%s]", namespace, cidr)
 	}
 	return addr.String(), nil
 
