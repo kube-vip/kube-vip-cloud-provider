@@ -116,6 +116,32 @@ func (k *kubevipLoadBalancerManager) syncLoadBalancer(ctx context.Context, servi
 			}
 		}
 		return &service.Status.LoadBalancer, nil
+	} else {
+		if v, ok := service.Annotations[loadbalancerIPsAnnotations]; ok && len(v) != 0 {
+			klog.Warningf("service '%s/%s' annotations '%s' is defined but service.Spec.LoadBalancerIP is not. Assume it's not legacy service", service.Namespace, service.Name, loadbalancerIPsAnnotations)
+
+			// Set Label for service lookups
+			if service.Labels == nil || service.Labels[implementationLabelKey] != implementationLabelValue {
+				err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+					recentService, getErr := k.kubeClient.CoreV1().Services(service.Namespace).Get(ctx, service.Name, metav1.GetOptions{})
+					if getErr != nil {
+						return getErr
+					}
+					if recentService.Labels == nil {
+						// Just because ..
+						recentService.Labels = make(map[string]string)
+					}
+					recentService.Labels[implementationLabelKey] = implementationLabelValue
+					// Update the actual service with the annotations
+					_, updateErr := k.kubeClient.CoreV1().Services(recentService.Namespace).Update(ctx, recentService, metav1.UpdateOptions{})
+					return updateErr
+				})
+				if err != nil {
+					return nil, fmt.Errorf("error updating Service Spec [%s] : %v", service.Name, err)
+				}
+			}
+			return &service.Status.LoadBalancer, nil
+		}
 	}
 
 	// Get the clound controller configuration map

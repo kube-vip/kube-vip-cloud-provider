@@ -392,6 +392,30 @@ func Test_syncLoadBalancer(t *testing.T) {
 			},
 		},
 		{
+			name: "add new annotation to new service which doesn't have spec.loadbalancerIP, doesn't add spec.loadbalancerIP",
+			originalService: v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test",
+					Name:      "name",
+					Annotations: map[string]string{
+						"kube-vip.io/loadbalancerIPs": "192.168.1.1",
+					},
+				},
+			},
+			expectedService: v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test",
+					Name:      "name",
+					Labels: map[string]string{
+						"implementation": "kube-vip",
+					},
+					Annotations: map[string]string{
+						"kube-vip.io/loadbalancerIPs": "192.168.1.1",
+					},
+				},
+			},
+		},
+		{
 			name: "ipv6, add new annotation and loadbalancerIP to new service",
 			originalService: v1.Service{
 				ObjectMeta: metav1.ObjectMeta{
