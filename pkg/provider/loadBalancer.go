@@ -145,11 +145,11 @@ func (k *kubevipLoadBalancerManager) syncLoadBalancer(ctx context.Context, servi
 	}
 
 	// Get the clound controller configuration map
-	controllerCM, err := k.GetConfigMap(ctx, KubeVipClientConfig, KubeVipClientConfigNamespace)
+	controllerCM, err := k.GetConfigMap(ctx, k.cloudConfigMap, k.nameSpace)
 	if err != nil {
-		klog.Errorf("Unable to retrieve kube-vip ipam config from configMap [%s] in %s", KubeVipClientConfig, KubeVipClientConfigNamespace)
+		klog.Errorf("Unable to retrieve kube-vip ipam config from configMap [%s] in %s", k.cloudConfigMap, k.nameSpace)
 		// TODO - determine best course of action, create one if it doesn't exist
-		controllerCM, err = k.CreateConfigMap(ctx, KubeVipClientConfig, KubeVipClientConfigNamespace)
+		controllerCM, err = k.CreateConfigMap(ctx, k.cloudConfigMap, k.nameSpace)
 		if err != nil {
 			return nil, err
 		}
