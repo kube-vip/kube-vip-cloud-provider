@@ -449,14 +449,55 @@ func Test_syncLoadBalancer(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "create config map with different name and namespace",
+			originalService: v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test",
+					Name:      "name",
+				},
+				Spec: v1.ServiceSpec{},
+			},
+			poolConfigMap: &v1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "load-balancer",
+					Namespace: "load-balancer-ns",
+				},
+				Data: map[string]string{
+					"cidr-global": "192.168.1.1/24",
+				},
+			},
+			expectedService: v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test",
+					Name:      "name",
+					Labels: map[string]string{
+						"implementation": "kube-vip",
+					},
+					Annotations: map[string]string{
+						"kube-vip.io/loadbalancerIPs": "192.168.1.1",
+					},
+				},
+				Spec: v1.ServiceSpec{
+					LoadBalancerIP: "192.168.1.1",
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			ns := KubeVipClientConfigNamespace
+			cm := KubeVipCloudConfig
+			if tt.poolConfigMap != nil {
+				ns = tt.poolConfigMap.GetObjectMeta().GetNamespace()
+				cm = tt.poolConfigMap.GetObjectMeta().GetName()
+			}
+
 			mgr := &kubevipLoadBalancerManager{
 				kubeClient:     fake.NewSimpleClientset(),
-				nameSpace:      "default",
-				cloudConfigMap: KubeVipCloudConfig,
+				nameSpace:      ns,
+				cloudConfigMap: cm,
 			}
 
 			// create dummy service
@@ -467,7 +508,7 @@ func Test_syncLoadBalancer(t *testing.T) {
 
 			// create pool if needed
 			if tt.poolConfigMap != nil {
-				_, err := mgr.kubeClient.CoreV1().ConfigMaps(KubeVipClientConfigNamespace).Create(context.Background(), tt.poolConfigMap, metav1.CreateOptions{})
+				_, err := mgr.kubeClient.CoreV1().ConfigMaps(ns).Create(context.Background(), tt.poolConfigMap, metav1.CreateOptions{})
 				if err != nil {
 					t.Error(err)
 				}
