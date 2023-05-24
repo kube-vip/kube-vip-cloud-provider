@@ -33,6 +33,19 @@ const (
 
 	//KubeVipServicesKey is the key in the ConfigMap that has the services configuration
 	KubeVipServicesKey = "kubevip-services"
+
+	// CustomConfigMapNameEnvKey environment key for the name of custom configMap of pool definition
+	CustomConfigMapNameEnvKey = "KUBEVIP_CONFIG_MAP"
+
+	// CustomConfigMapNamespaceEnvKey environment key for the namespace of custom configMap of pool definition
+	CustomConfigMapNamespaceEnvKey = "KUBEVIP_NAMESPACE"
+
+	// CustomLoadbalancerClassEnvKey environment key for custom loadbalancerclass name
+	CustomLoadbalancerClassEnvKey = "KUBEVIP_CUSTOM_LOADBALANCERCLASS_NAME"
+
+	// EnableLoadbalancerClassEnvKey environment key for enabling loadbalancerclass.
+	// This should be enabled if CustomLoadbalancerClassNameEnvKey is not empty
+	EnableLoadbalancerClassEnvKey = "KUBEVIP_ENABLE_LOADBALANCERCLASS"
 )
 
 func init() {
@@ -47,8 +60,12 @@ type KubeVipCloudProvider struct {
 var _ cloudprovider.Interface = &KubeVipCloudProvider{}
 
 func newKubeVipCloudProvider(io.Reader) (cloudprovider.Interface, error) {
-	ns := os.Getenv("KUBEVIP_NAMESPACE")
-	cm := os.Getenv("KUBEVIP_CONFIG_MAP")
+	ns := os.Getenv(CustomConfigMapNamespaceEnvKey)
+	cm := os.Getenv(CustomConfigMapNameEnvKey)
+	enableLBClass := os.Getenv(EnableLoadbalancerClassEnvKey)
+	customLBClass := os.Getenv(CustomLoadbalancerClassEnvKey)
+
+	var lbClass string
 
 	if cm == "" {
 		cm = KubeVipCloudConfig
@@ -56,6 +73,13 @@ func newKubeVipCloudProvider(io.Reader) (cloudprovider.Interface, error) {
 
 	if ns == "" {
 		ns = "default"
+	}
+
+	if enableLBClass == "true" {
+		lbClass = defaultLoadbalancerClass
+	}
+	if customLBClass != "" {
+		lbClass = customLBClass
 	}
 
 	var cl *kubernetes.Clientset
@@ -83,7 +107,7 @@ func newKubeVipCloudProvider(io.Reader) (cloudprovider.Interface, error) {
 		}
 	}
 	return &KubeVipCloudProvider{
-		lb: newLoadBalancer(cl, ns, cm),
+		lb: newLoadBalancer(cl, ns, cm, lbClass),
 	}, nil
 }
 

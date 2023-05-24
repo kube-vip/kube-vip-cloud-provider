@@ -25,20 +25,23 @@ const (
 	implementationLabelKey     = "implementation"
 	implementationLabelValue   = "kube-vip"
 	legacyIpamAddressLabelKey  = "ipam-address"
+	defaultLoadbalancerClass   = "kube-vip.io/kube-vip-class"
 )
 
 // kubevipLoadBalancerManager -
 type kubevipLoadBalancerManager struct {
-	kubeClient     kubernetes.Interface
-	nameSpace      string
-	cloudConfigMap string
+	kubeClient        kubernetes.Interface
+	nameSpace         string
+	cloudConfigMap    string
+	loadbalancerClass string
 }
 
-func newLoadBalancer(kubeClient kubernetes.Interface, ns, cm string) cloudprovider.LoadBalancer {
+func newLoadBalancer(kubeClient kubernetes.Interface, ns, cm, lbClass string) cloudprovider.LoadBalancer {
 	k := &kubevipLoadBalancerManager{
-		kubeClient:     kubeClient,
-		nameSpace:      ns,
-		cloudConfigMap: cm,
+		kubeClient:        kubeClient,
+		nameSpace:         ns,
+		cloudConfigMap:    cm,
+		loadbalancerClass: lbClass,
 	}
 	return k
 }
@@ -89,6 +92,10 @@ func (k *kubevipLoadBalancerManager) deleteLoadBalancer(ctx context.Context, ser
 func (k *kubevipLoadBalancerManager) syncLoadBalancer(ctx context.Context, service *v1.Service) (*v1.LoadBalancerStatus, error) {
 	// This function reconciles the load balancer state
 	klog.Infof("syncing service '%s' (%s)", service.Name, service.UID)
+
+	if !k.serviceMatchLoadbalancerClass(service) {
+		return &service.Status.LoadBalancer, nil
+	}
 
 	// The loadBalancer address has already been populated
 	if service.Spec.LoadBalancerIP != "" {
@@ -296,4 +303,17 @@ func discoverAddress(namespace, pool string, inUseIPSet *netipx.IPSet) (vip stri
 
 func getKubevipImplementationLabel() string {
 	return fmt.Sprintf("%s=%s", implementationLabelKey, implementationLabelValue)
+}
+
+func (k *kubevipLoadBalancerManager) serviceMatchLoadbalancerClass(service *v1.Service) bool {
+	if service.Spec.LoadBalancerClass == nil && k.loadbalancerClass == "" {
+		return true
+	}
+	if service.Spec.LoadBalancerClass != nil && k.loadbalancerClass == *service.Spec.LoadBalancerClass {
+		return true
+	}
+
+	klog.Infof("service's loadbalancerClass '%v' doesn't match kube-vip loadbalancerClass '%s'", service.Spec.LoadBalancerClass, k.loadbalancerClass)
+
+	return false
 }

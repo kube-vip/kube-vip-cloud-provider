@@ -316,10 +316,14 @@ func Test_DiscoveryAddressRange(t *testing.T) {
 
 func Test_syncLoadBalancer(t *testing.T) {
 
+	var (
+		loadbalancerClass1 = "test1"
+	)
 	tests := []struct {
-		name             string
-		serviceNamespace string
-		serviceName      string
+		name               string
+		serviceNamespace   string
+		serviceName        string
+		loadBalanacerClass string
 
 		originalService v1.Service
 		poolConfigMap   *v1.ConfigMap
@@ -483,6 +487,136 @@ func Test_syncLoadBalancer(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "loadbalancerClass is set kube-vip cloud provider config not on service, skip reconciling",
+
+			loadBalanacerClass: defaultLoadbalancerClass,
+			originalService: v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test",
+					Name:      "name",
+				},
+			},
+			poolConfigMap: &v1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      KubeVipClientConfig,
+					Namespace: KubeVipClientConfigNamespace,
+				},
+				Data: map[string]string{
+					"cidr-global": "192.168.1.1/24",
+				},
+			},
+			expectedService: v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test",
+					Name:      "name",
+				},
+				Spec: v1.ServiceSpec{},
+			},
+		},
+
+		{
+			name: "loadbalancerClass is set on service, not in kube-vip cloud provider config, skip reconciling",
+
+			originalService: v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test",
+					Name:      "name",
+				},
+				Spec: v1.ServiceSpec{
+					LoadBalancerClass: &loadbalancerClass1,
+				},
+			},
+			poolConfigMap: &v1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      KubeVipClientConfig,
+					Namespace: KubeVipClientConfigNamespace,
+				},
+				Data: map[string]string{
+					"cidr-global": "192.168.1.1/24",
+				},
+			},
+			expectedService: v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test",
+					Name:      "name",
+				},
+				Spec: v1.ServiceSpec{
+					LoadBalancerClass: &loadbalancerClass1,
+				},
+			},
+		},
+		{
+			name: "loadbalancerClass is set on service and kube-vip cloud provider config, but different, skip reconciling",
+
+			loadBalanacerClass: defaultLoadbalancerClass,
+			originalService: v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test",
+					Name:      "name",
+				},
+				Spec: v1.ServiceSpec{
+					LoadBalancerClass: &loadbalancerClass1,
+				},
+			},
+			poolConfigMap: &v1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      KubeVipClientConfig,
+					Namespace: KubeVipClientConfigNamespace,
+				},
+				Data: map[string]string{
+					"cidr-global": "192.168.1.1/24",
+				},
+			},
+			expectedService: v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test",
+					Name:      "name",
+				},
+				Spec: v1.ServiceSpec{
+					LoadBalancerClass: &loadbalancerClass1,
+				},
+			},
+		},
+		{
+			name: "loadbalancerClass is set on service and kube-vip cloud provider config, same, reconciling",
+
+			loadBalanacerClass: loadbalancerClass1,
+			originalService: v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test",
+					Name:      "name",
+				},
+				Spec: v1.ServiceSpec{
+					LoadBalancerClass: &loadbalancerClass1,
+				},
+			},
+			poolConfigMap: &v1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      KubeVipClientConfig,
+					Namespace: KubeVipClientConfigNamespace,
+				},
+				Data: map[string]string{
+					"cidr-global": "192.168.1.1/24",
+				},
+			},
+			expectedService: v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test",
+					Name:      "name",
+					Labels: map[string]string{
+						"implementation": "kube-vip",
+					},
+					Annotations: map[string]string{
+						"kube-vip.io/loadbalancerIPs": "192.168.1.1",
+					},
+				},
+				Spec: v1.ServiceSpec{
+					LoadBalancerIP:    "192.168.1.1",
+					LoadBalancerClass: &loadbalancerClass1,
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -498,6 +632,9 @@ func Test_syncLoadBalancer(t *testing.T) {
 				kubeClient:     fake.NewSimpleClientset(),
 				nameSpace:      ns,
 				cloudConfigMap: cm,
+			}
+			if tt.loadBalanacerClass != "" {
+				mgr.loadbalancerClass = tt.loadBalanacerClass
 			}
 
 			// create dummy service
