@@ -10,13 +10,14 @@ The `kube-vip-cloud-provider` will only implement the `loadBalancer` functionali
 
 ## IP address functionality
 
-- IP address pools by CIDR
-- IP ranges [start address - end address]
-- Multiple pools by CIDR per namespace
-- Multiple IP ranges per namespace (handles overlapping ranges)
-- Setting of static addresses through `--load-balancer-ip=x.x.x.x` or through annotations `kube-vip.io/loadbalancerIPs: x.x.x.x`
+- IP address pools by CIDR.
+- IP ranges [start address - end address].
+- Multiple pools by CIDR per namespace.
+- Multiple IP ranges per namespace (handles overlapping ranges).
+- Setting of static addresses through `--load-balancer-ip=x.x.x.x` or through annotations `kube-vip.io/loadbalancerIPs: x.x.x.x`.
 - Setting the special IP `0.0.0.0` for DHCP workflow.
-- Support single stack IPv6 or IPv4
+- Support single stack IPv6 or IPv4.
+- Support loadbalancerClass `kube-vip.io/kube-vip-class` or custom loadbalancerClass name.
 
 ## Installing the `kube-vip-cloud-provider`
 
@@ -79,6 +80,12 @@ We can apply multiple pools or ranges by seperating them with commas.. i.e. `192
 ## Special DHCP CIDR
 
 Set the CIDR to `0.0.0.0/32`, that will make the controller to give all _LoadBalancers_ the IP `0.0.0.0`.
+
+## LoadbalancerClass support
+
+If users only want kube-vip-cloud-provider to allocate ip for specific set of services, they can pass `KUBEVIP_ENABLE_LOADBALANCERCLASS: true` as an environment variable to kube-vip-cloud-provider. kube-vip-cloud-provider will only allocate ip to service with `spec.loadBalancerClass: kube-vip.io/kube-vip-class`.
+
+If users want to use a custom loadbalancerClass name, they can pass `KUBEVIP_CUSTOM_LOADBALANCERCLASS_NAME: <custom name>` as an environment variable, without setting `KUBEVIP_ENABLE_LOADBALANCERCLASS`. They set `spec.loadBalancerClass: <custom name>` on the service.
 
 ## Debugging
 
