@@ -11,6 +11,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/klog"
 
 	cloudprovider "k8s.io/cloud-provider"
 )
@@ -106,6 +107,11 @@ func newKubeVipCloudProvider(io.Reader) (cloudprovider.Interface, error) {
 			return nil, fmt.Errorf("error creating kubernetes client: %s", err.Error())
 		}
 	}
+
+	if lbClass != "" {
+		klog.Infof("kube-vip-cloud-provider starts with loadbalancerClass setting: '%s'. It will only allocate IPs for services with this loadbalancerClass", lbClass)
+	}
+
 	return &KubeVipCloudProvider{
 		lb: newLoadBalancer(cl, ns, cm, lbClass),
 	}, nil
