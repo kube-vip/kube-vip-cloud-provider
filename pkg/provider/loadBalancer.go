@@ -118,10 +118,10 @@ func (k *kubevipLoadBalancerManager) syncLoadBalancer(ctx context.Context, servi
 		return &service.Status.LoadBalancer, nil
 	} else {
 		if v, ok := service.Annotations[loadbalancerIPsAnnotations]; ok && len(v) != 0 {
-			klog.Warningf("service '%s/%s' annotations '%s' is defined but service.Spec.LoadBalancerIP is not. Assume it's not legacy service", service.Namespace, service.Name, loadbalancerIPsAnnotations)
-
+			klog.Infof("service '%s/%s' annotations '%s' is defined but service.Spec.LoadBalancerIP is not. Assume it's not legacy service", service.Namespace, service.Name, loadbalancerIPsAnnotations)
 			// Set Label for service lookups
 			if service.Labels == nil || service.Labels[implementationLabelKey] != implementationLabelValue {
+				klog.Infof("service '%s/%s' created with pre-defined ip '%s'", service.Namespace, service.Name, v)
 				err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 					recentService, getErr := k.kubeClient.CoreV1().Services(service.Namespace).Get(ctx, service.Name, metav1.GetOptions{})
 					if getErr != nil {
