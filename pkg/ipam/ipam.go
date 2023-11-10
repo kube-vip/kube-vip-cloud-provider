@@ -26,7 +26,7 @@ type ipManager struct {
 }
 
 // FindAvailableHostFromRange - will look through the cidr and the address Manager and find a free address (if possible)
-func FindAvailableHostFromRange(namespace, ipRange string, inUseIPSet *netipx.IPSet) (string, error) {
+func FindAvailableHostFromRange(namespace, ipRange string, inUseIPSet *netipx.IPSet, descOrder bool) (string, error) {
 
 	// Look through namespaces and update one if it exists
 	for x := range Manager {
@@ -44,8 +44,7 @@ func FindAvailableHostFromRange(namespace, ipRange string, inUseIPSet *netipx.IP
 				Manager[x].ipRange = ipRange
 			}
 
-			// TODO - currently we search (incrementally) through the list of hosts
-			addr, err := FindFreeAddress(Manager[x].poolIPSet, inUseIPSet)
+			addr, err := FindFreeAddress(Manager[x].poolIPSet, inUseIPSet, descOrder)
 			if err != nil {
 				return "", fmt.Errorf("no addresses available in [%s] range [%s]", namespace, ipRange)
 			}
@@ -66,8 +65,7 @@ func FindAvailableHostFromRange(namespace, ipRange string, inUseIPSet *netipx.IP
 
 	Manager = append(Manager, newManager)
 
-	// TODO - currently we search (incrementally) through the list of hosts
-	addr, err := FindFreeAddress(poolIPSet, inUseIPSet)
+	addr, err := FindFreeAddress(poolIPSet, inUseIPSet, descOrder)
 	if err != nil {
 		return "", fmt.Errorf("no addresses available in [%s] range [%s]", namespace, ipRange)
 	}
@@ -75,7 +73,7 @@ func FindAvailableHostFromRange(namespace, ipRange string, inUseIPSet *netipx.IP
 }
 
 // FindAvailableHostFromCidr - will look through the cidr and the address Manager and find a free address (if possible)
-func FindAvailableHostFromCidr(namespace, cidr string, inUseIPSet *netipx.IPSet) (string, error) {
+func FindAvailableHostFromCidr(namespace, cidr string, inUseIPSet *netipx.IPSet, descOrder bool) (string, error) {
 
 	// Look through namespaces and update one if it exists
 	for x := range Manager {
@@ -91,8 +89,7 @@ func FindAvailableHostFromCidr(namespace, cidr string, inUseIPSet *netipx.IPSet)
 				Manager[x].cidr = cidr
 
 			}
-			// TODO - currently we search (incrementally) through the list of hosts
-			addr, err := FindFreeAddress(Manager[x].poolIPSet, inUseIPSet)
+			addr, err := FindFreeAddress(Manager[x].poolIPSet, inUseIPSet, descOrder)
 			if err != nil {
 				return "", fmt.Errorf("no addresses available in [%s] cidr [%s]", namespace, cidr)
 			}
@@ -112,8 +109,7 @@ func FindAvailableHostFromCidr(namespace, cidr string, inUseIPSet *netipx.IPSet)
 	}
 	Manager = append(Manager, newManager)
 
-	// TODO - currently we search (incrementally) through the list of hosts
-	addr, err := FindFreeAddress(poolIPSet, inUseIPSet)
+	addr, err := FindFreeAddress(poolIPSet, inUseIPSet, descOrder)
 	if err != nil {
 		return "", fmt.Errorf("no addresses available in [%s] cidr [%s]", namespace, cidr)
 	}
@@ -144,17 +140,34 @@ func FindAvailableHostFromCidr(namespace, cidr string, inUseIPSet *netipx.IPSet)
 
 // FindFreeAddress returns the next free IP Address in a range based on a set of existing addresses.
 // It will skip assumed gateway ip or broadcast ip for IPv4 address
-func FindFreeAddress(poolIPSet *netipx.IPSet, inUseIPSet *netipx.IPSet) (netip.Addr, error) {
-	for _, iprange := range poolIPSet.Ranges() {
-		ip := iprange.From()
-		for {
-			if !inUseIPSet.Contains(ip) && (!ip.Is4() || !isNetworkIDOrBroadcastIP(ip.As4())) {
-				return ip, nil
+func FindFreeAddress(poolIPSet *netipx.IPSet, inUseIPSet *netipx.IPSet, descOrder bool) (netip.Addr, error) {
+	if descOrder {
+		ipranges := poolIPSet.Ranges()
+		for i := len(ipranges) - 1; i >= 0; i-- {
+			iprange := ipranges[i]
+			ip := iprange.To()
+			for {
+				if !inUseIPSet.Contains(ip) && (!ip.Is4() || !isNetworkIDOrBroadcastIP(ip.As4())) {
+					return ip, nil
+				}
+				if ip == iprange.From() {
+					break
+				}
+				ip = ip.Prev()
 			}
-			if ip == iprange.To() {
-				break
+		}
+	} else {
+		for _, iprange := range poolIPSet.Ranges() {
+			ip := iprange.From()
+			for {
+				if !inUseIPSet.Contains(ip) && (!ip.Is4() || !isNetworkIDOrBroadcastIP(ip.As4())) {
+					return ip, nil
+				}
+				if ip == iprange.To() {
+					break
+				}
+				ip = ip.Next()
 			}
-			ip = ip.Next()
 		}
 	}
 	return netip.Addr{}, errors.New("no address available")

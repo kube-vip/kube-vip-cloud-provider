@@ -206,6 +206,7 @@ func TestFindAvailableHostFromRange(t *testing.T) {
 		namespace        string
 		ipRange          string
 		existingServices []string
+		descOrder        bool
 	}
 	tests := []struct {
 		name    string
@@ -223,6 +224,16 @@ func TestFindAvailableHostFromRange(t *testing.T) {
 			want: "192.168.0.10",
 		},
 		{
+			name: "simple range, revert",
+			args: args{
+				namespace:        "default",
+				ipRange:          "192.168.0.10-192.168.0.10",
+				existingServices: []string{},
+				descOrder:        true,
+			},
+			want: "192.168.0.10",
+		},
+		{
 			name: "single range, three addresses",
 			args: args{
 				namespace:        "default2",
@@ -230,6 +241,16 @@ func TestFindAvailableHostFromRange(t *testing.T) {
 				existingServices: []string{},
 			},
 			want: "192.168.0.10",
+		},
+		{
+			name: "single range, three addresses, revert",
+			args: args{
+				namespace:        "default2",
+				ipRange:          "192.168.0.10-192.168.0.12",
+				existingServices: []string{},
+				descOrder:        true,
+			},
+			want: "192.168.0.12",
 		},
 		{
 			name: "single range, across third octet",
@@ -241,6 +262,16 @@ func TestFindAvailableHostFromRange(t *testing.T) {
 			want: "192.168.1.1",
 		},
 		{
+			name: "single range, across third octet, revert",
+			args: args{
+				namespace:        "default2",
+				ipRange:          "192.168.0.253-192.168.1.2",
+				existingServices: []string{"192.168.1.1", "192.168.1.2"},
+				descOrder:        true,
+			},
+			want: "192.168.0.254",
+		},
+		{
 			name: "two ranges, four addresses",
 			args: args{
 				namespace:        "default2",
@@ -248,6 +279,16 @@ func TestFindAvailableHostFromRange(t *testing.T) {
 				existingServices: []string{"192.168.0.9", "192.168.0.10"},
 			},
 			want: "192.168.0.11",
+		},
+		{
+			name: "two ranges, four addresses, revert",
+			args: args{
+				namespace:        "default2",
+				ipRange:          "192.168.0.10-192.168.0.11,192.168.1.20-192.168.1.22",
+				existingServices: []string{"192.168.1.21", "192.168.1.22"},
+				descOrder:        true,
+			},
+			want: "192.168.1.20",
 		},
 		{
 			name: "ipv6, simple range",
@@ -259,6 +300,16 @@ func TestFindAvailableHostFromRange(t *testing.T) {
 			want: "fe80::13",
 		},
 		{
+			name: "ipv6, simple range, revert",
+			args: args{
+				namespace:        "default",
+				ipRange:          "fe80::13-fe80::14",
+				existingServices: []string{},
+				descOrder:        true,
+			},
+			want: "fe80::14",
+		},
+		{
 			name: "ipv6, single range, three addresses",
 			args: args{
 				namespace:        "default2",
@@ -268,11 +319,31 @@ func TestFindAvailableHostFromRange(t *testing.T) {
 			want: "fe80::13",
 		},
 		{
+			name: "ipv6, single range, three addresses, revert",
+			args: args{
+				namespace:        "default2",
+				ipRange:          "fe80::13-fe80::15",
+				existingServices: []string{},
+				descOrder:        true,
+			},
+			want: "fe80::15",
+		},
+		{
 			name: "ipv6, single range, across third octet",
 			args: args{
 				namespace:        "default2",
 				ipRange:          "fe80::ffff-fe80::1:3",
-				existingServices: []string{"fe80::1:0"},
+				existingServices: []string{"fe80::ffff"},
+			},
+			want: "fe80::1:0",
+		},
+		{
+			name: "ipv6, single range, across third octet, revert",
+			args: args{
+				namespace:        "default2",
+				ipRange:          "fe80::ffff-fe80::1:3",
+				existingServices: []string{"fe80::1:3", "fe80::1:2", "fe80::1:1", "fe80::1:0"},
+				descOrder:        true,
 			},
 			want: "fe80::ffff",
 		},
@@ -284,6 +355,16 @@ func TestFindAvailableHostFromRange(t *testing.T) {
 				existingServices: []string{"fe80::10", "fe80::11", "fe80::12"},
 			},
 			want: "fe81::20",
+		},
+		{
+			name: "ipv6, two ranges, 5 addresses, revert",
+			args: args{
+				namespace:        "default2",
+				ipRange:          "fe80::10-fe80::12,fe81::20-fe81::21",
+				existingServices: []string{"fe81::21", "fe81::20"},
+				descOrder:        true,
+			},
+			want: "fe80::12",
 		},
 	}
 
@@ -304,7 +385,7 @@ func TestFindAvailableHostFromRange(t *testing.T) {
 				return
 			}
 
-			got, err := FindAvailableHostFromRange(tt.args.namespace, tt.args.ipRange, s)
+			got, err := FindAvailableHostFromRange(tt.args.namespace, tt.args.ipRange, s, tt.args.descOrder)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("FindAvailableHostFromRange() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -321,6 +402,7 @@ func TestFindAvailableHostFromCIDR(t *testing.T) {
 		namespace        string
 		cidr             string
 		existingServices []string
+		descOrder        bool
 	}
 	tests := []struct {
 		name    string
@@ -335,7 +417,17 @@ func TestFindAvailableHostFromCIDR(t *testing.T) {
 				cidr:             "192.168.0.200/30",
 				existingServices: []string{},
 			},
-			want: "192.168.0.200",
+			want: "192.168.0.201",
+		},
+		{
+			name: "single entry, two address, revert",
+			args: args{
+				namespace:        "default",
+				cidr:             "192.168.0.200/30",
+				existingServices: []string{},
+				descOrder:        true,
+			},
+			want: "192.168.0.202",
 		},
 		{
 			name: "simple cidr, cidr contains .0 and .255",
@@ -347,11 +439,31 @@ func TestFindAvailableHostFromCIDR(t *testing.T) {
 			want: "192.168.0.1",
 		},
 		{
+			name: "simple cidr, cidr contains .0 and .255, revert",
+			args: args{
+				namespace:        "default2",
+				cidr:             "192.168.0.10/24",
+				existingServices: []string{},
+				descOrder:        true,
+			},
+			want: "192.168.0.254",
+		},
+		{
 			name: "no ip available",
 			args: args{
 				namespace:        "default2",
 				cidr:             "192.168.0.255/30",
 				existingServices: []string{"192.168.0.254", "192.168.0.252", "192.168.0.253"},
+			},
+			wantErr: true,
+		},
+		{
+			name: "no ip available, revert",
+			args: args{
+				namespace:        "default2",
+				cidr:             "192.168.0.255/30",
+				existingServices: []string{"192.168.0.254", "192.168.0.252", "192.168.0.253"},
+				descOrder:        true,
 			},
 			wantErr: true,
 		},
@@ -362,7 +474,17 @@ func TestFindAvailableHostFromCIDR(t *testing.T) {
 				cidr:             "192.168.0.200/30,192.168.0.200/29",
 				existingServices: []string{"192.168.0.201", "192.168.0.202"},
 			},
-			want: "192.168.0.200",
+			want: "192.168.0.203",
+		},
+		{
+			name: "dual entry, overlap address, revert",
+			args: args{
+				namespace:        "default2",
+				cidr:             "192.168.0.200/30,192.168.0.200/29",
+				existingServices: []string{"192.168.0.201", "192.168.0.202"},
+				descOrder:        true,
+			},
+			want: "192.168.0.206",
 		},
 		{
 			name: "ipv6, single entry, two address",
@@ -374,11 +496,31 @@ func TestFindAvailableHostFromCIDR(t *testing.T) {
 			want: "2001::49fe",
 		},
 		{
+			name: "ipv6, single entry, two address, revert",
+			args: args{
+				namespace:        "default",
+				cidr:             "2001::49fe/127",
+				existingServices: []string{},
+				descOrder:        true,
+			},
+			want: "2001::49ff",
+		},
+		{
 			name: "ipv6, no ip available",
 			args: args{
 				namespace:        "default2",
 				cidr:             "2001::49fe/127",
 				existingServices: []string{"2001::49fe", "2001::49ff"},
+			},
+			wantErr: true,
+		},
+		{
+			name: "ipv6, no ip available, revert",
+			args: args{
+				namespace:        "default2",
+				cidr:             "2001::49fe/127",
+				existingServices: []string{"2001::49fe", "2001::49ff"},
+				descOrder:        true,
 			},
 			wantErr: true,
 		},
@@ -390,6 +532,16 @@ func TestFindAvailableHostFromCIDR(t *testing.T) {
 				existingServices: []string{"2001::10", "2001::11"},
 			},
 			want: "2001::12",
+		},
+		{
+			name: "ipv6, dual entry, overlap address, revert",
+			args: args{
+				namespace:        "default2",
+				cidr:             "2001::10/126,2001::12/127",
+				existingServices: []string{"2001::10", "2001::11"},
+				descOrder:        true,
+			},
+			want: "2001::13",
 		},
 	}
 
@@ -410,7 +562,7 @@ func TestFindAvailableHostFromCIDR(t *testing.T) {
 				return
 			}
 
-			got, err := FindAvailableHostFromCidr(tt.args.namespace, tt.args.cidr, s)
+			got, err := FindAvailableHostFromCidr(tt.args.namespace, tt.args.cidr, s, tt.args.descOrder)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("FindAvailableHostFromCIDR() error = %v, wantErr %v", err, tt.wantErr)
 				return
