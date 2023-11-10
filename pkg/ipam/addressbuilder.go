@@ -23,7 +23,24 @@ func buildHostsFromCidr(cidr string) (*netipx.IPSet, error) {
 		if err != nil {
 			return nil, err
 		}
-		builder.AddPrefix(prefix)
+		if prefix.IsSingleIP() {
+			builder.Add(prefix.Addr())
+			continue
+		}
+		if !prefix.Addr().Is4() {
+			builder.AddPrefix(prefix)
+			continue
+		}
+
+		if r := netipx.RangeOfPrefix(prefix); r.IsValid() {
+			if prefix.Bits() == 31 {
+				// rfc3021 Using 31-Bit Prefixes on IPv4 Point-to-Point Links
+				builder.AddRange(netipx.IPRangeFrom(r.From(), r.To()))
+				continue
+			}
+			// For 192.168.0.200/23, 192.168.0.206 is the BroadcastIP, and 192.168.0.201 is the NetworkID
+			builder.AddRange(netipx.IPRangeFrom(r.From().Next(), r.To().Prev()))
+		}
 	}
 	return builder.IPSet()
 }
