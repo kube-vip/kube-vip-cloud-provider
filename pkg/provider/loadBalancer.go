@@ -301,7 +301,7 @@ func getKubevipImplementationLabel() string {
 }
 
 func getSearchOrder(cm *v1.ConfigMap) (descOrder bool) {
-	if searchOrder, ok := cm.Data["search_order"]; ok {
+	if searchOrder, ok := cm.Data["search-order"]; ok {
 		if searchOrder == "desc" {
 			return true
 		}
