@@ -8,8 +8,8 @@ import (
 	"go4.org/netipx"
 )
 
-// buildHostsFromCidr - Builds a IPSet constructed from the cidr
-func buildHostsFromCidr(cidr string) (*netipx.IPSet, error) {
+// parseCidr - Builds an IPSet constructed from the cidrs
+func parseCidrs(cidr string) (*netipx.IPSet, error) {
 	// Split the ipranges (comma separated)
 	cidrs := strings.Split(cidr, ",")
 	if len(cidrs) == 0 {
@@ -23,6 +23,21 @@ func buildHostsFromCidr(cidr string) (*netipx.IPSet, error) {
 		if err != nil {
 			return nil, err
 		}
+		builder.AddPrefix(prefix)
+	}
+	return builder.IPSet()
+}
+
+// buildHostsFromCidr - Builds a IPSet constructed from the cidr and filters out
+// the broadcast IP and network IP for IPv4 networks
+func buildHostsFromCidr(cidr string) (*netipx.IPSet, error) {
+	unfilteredSet, err := parseCidrs(cidr)
+	if err != nil {
+		return nil, err
+	}
+
+	builder := &netipx.IPSetBuilder{}
+	for _, prefix := range unfilteredSet.Prefixes() {
 		if prefix.IsSingleIP() {
 			builder.Add(prefix.Addr())
 			continue
@@ -31,7 +46,6 @@ func buildHostsFromCidr(cidr string) (*netipx.IPSet, error) {
 			builder.AddPrefix(prefix)
 			continue
 		}
-
 		if r := netipx.RangeOfPrefix(prefix); r.IsValid() {
 			if prefix.Bits() == 31 {
 				// rfc3021 Using 31-Bit Prefixes on IPv4 Point-to-Point Links
@@ -76,4 +90,50 @@ func buildAddressesFromRange(ipRangeString string) (*netipx.IPSet, error) {
 	}
 
 	return builder.IPSet()
+}
+
+// SplitCIDRsByIPFamily splits the cidrs into separate lists of ipv4
+// and ipv6 CIDRs
+func SplitCIDRsByIPFamily(cidrs string) (ipv4 string, ipv6 string, err error) {
+	ipPools, err := parseCidrs(cidrs)
+	if err != nil {
+		return "", "", err
+	}
+	ipv4Cidrs := strings.Builder{}
+	ipv6Cidrs := strings.Builder{}
+	for _, prefix := range ipPools.Prefixes() {
+		cidrsToEdit := &ipv4Cidrs
+		if prefix.Addr().Is6() {
+			cidrsToEdit = &ipv6Cidrs
+		}
+		if cidrsToEdit.Len() > 0 {
+			cidrsToEdit.WriteByte(',')
+		}
+		_, _ = cidrsToEdit.WriteString(prefix.String())
+	}
+	return ipv4Cidrs.String(), ipv6Cidrs.String(), nil
+}
+
+// SplitRangesByIPFamily splits the ipRangeString into separate lists of ipv4
+// and ipv6 ranges
+func SplitRangesByIPFamily(ipRangeString string) (ipv4 string, ipv6 string, err error) {
+	ipPools, err := buildAddressesFromRange(ipRangeString)
+	if err != nil {
+		return "", "", err
+	}
+	ipv4Ranges := strings.Builder{}
+	ipv6Ranges := strings.Builder{}
+	for _, ipRange := range ipPools.Ranges() {
+		rangeToEdit := &ipv4Ranges
+		if ipRange.From().Is6() {
+			rangeToEdit = &ipv6Ranges
+		}
+		if rangeToEdit.Len() > 0 {
+			rangeToEdit.WriteByte(',')
+		}
+		_, _ = rangeToEdit.WriteString(ipRange.From().String())
+		_ = rangeToEdit.WriteByte('-')
+		_, _ = rangeToEdit.WriteString(ipRange.To().String())
+	}
+	return ipv4Ranges.String(), ipv6Ranges.String(), nil
 }
