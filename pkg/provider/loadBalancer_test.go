@@ -218,7 +218,7 @@ func Test_DiscoveryAddressCIDR(t *testing.T) {
 				return
 			}
 
-			gotString, err := discoverAddress(tt.args.namespace, tt.args.pool, s)
+			gotString, err := discoverAddress(tt.args.namespace, tt.args.pool, s, false)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("discoverAddress() error: %v, expected: %v", err, tt.wantErr)
 				return
@@ -302,7 +302,7 @@ func Test_DiscoveryAddressRange(t *testing.T) {
 				return
 			}
 
-			gotString, err := discoverAddress(tt.args.namespace, tt.args.pool, s)
+			gotString, err := discoverAddress(tt.args.namespace, tt.args.pool, s, false)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("discoverAddress() error: %v, expected: %v", err, tt.wantErr)
 				return

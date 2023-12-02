@@ -17,6 +17,7 @@ The `kube-vip-cloud-provider` will only implement the `loadBalancer` functionali
 - Setting of static addresses through `--load-balancer-ip=x.x.x.x` or through annotations `kube-vip.io/loadbalancerIPs: x.x.x.x`
 - Setting the special IP `0.0.0.0` for DHCP workflow.
 - Support single stack IPv6 or IPv4
+- Support ascending and descending search order by setting search-order=desc
 
 ## Installing the `kube-vip-cloud-provider`
 
@@ -66,10 +67,22 @@ data:
 kubectl create configmap --namespace kube-system kubevip --from-literal cidr-global=192.168.0.220/29
 ```
 
+## Create an IP pool using a CIDR and descending search order
+
+```
+kubectl create configmap --namespace kube-system kubevip --from-literal cidr-global=192.168.0.220/29 --from-literal search-order=desc
+```
+
 ## Create an IP range
 
 ```
 kubectl create configmap --namespace kube-system kubevip --from-literal range-global=192.168.0.200-192.168.0.202
+```
+
+## Create an IP range and descending search order
+
+```
+kubectl create configmap --namespace kube-system kubevip --from-literal range-global=192.168.0.200-192.168.0.202 --from-literal search-order=desc
 ```
 
 ## Multiple pools or ranges

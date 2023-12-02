@@ -189,8 +189,10 @@ func (k *kubevipLoadBalancerManager) syncLoadBalancer(ctx context.Context, servi
 		return nil, err
 	}
 
+	descOrder := getSearchOrder(controllerCM)
+
 	// If the LoadBalancer address is empty, then do a local IPAM lookup
-	loadBalancerIP, err := discoverAddress(service.Namespace, pool, inUseSet)
+	loadBalancerIP, err := discoverAddress(service.Namespace, pool, inUseSet, descOrder)
 
 	if err != nil {
 		return nil, err
@@ -274,18 +276,18 @@ func discoverPool(cm *v1.ConfigMap, namespace, configMapName string) (pool strin
 	return "", false, fmt.Errorf("no address pools could be found")
 }
 
-func discoverAddress(namespace, pool string, inUseIPSet *netipx.IPSet) (vip string, err error) {
+func discoverAddress(namespace, pool string, inUseIPSet *netipx.IPSet, descOrder bool) (vip string, err error) {
 	// Check if DHCP is required
 	if pool == "0.0.0.0/32" {
 		vip = "0.0.0.0"
 		// Check if ip pool contains a cidr, if not assume it is a range
 	} else if strings.Contains(pool, "/") {
-		vip, err = ipam.FindAvailableHostFromCidr(namespace, pool, inUseIPSet)
+		vip, err = ipam.FindAvailableHostFromCidr(namespace, pool, inUseIPSet, descOrder)
 		if err != nil {
 			return "", err
 		}
 	} else {
-		vip, err = ipam.FindAvailableHostFromRange(namespace, pool, inUseIPSet)
+		vip, err = ipam.FindAvailableHostFromRange(namespace, pool, inUseIPSet, descOrder)
 		if err != nil {
 			return "", err
 		}
@@ -296,4 +298,13 @@ func discoverAddress(namespace, pool string, inUseIPSet *netipx.IPSet) (vip stri
 
 func getKubevipImplementationLabel() string {
 	return fmt.Sprintf("%s=%s", implementationLabelKey, implementationLabelValue)
+}
+
+func getSearchOrder(cm *v1.ConfigMap) (descOrder bool) {
+	if searchOrder, ok := cm.Data["search-order"]; ok {
+		if searchOrder == "desc" {
+			return true
+		}
+	}
+	return false
 }
