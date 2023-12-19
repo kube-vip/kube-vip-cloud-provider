@@ -14,9 +14,11 @@ The `kube-vip-cloud-provider` will only implement the `loadBalancer` functionali
 - IP ranges [start address - end address]
 - Multiple pools by CIDR per namespace
 - Multiple IP ranges per namespace (handles overlapping ranges)
+- Support for mixed IP families when specifying multiple pools or ranges
 - Setting of static addresses through `--load-balancer-ip=x.x.x.x` or through annotations `kube-vip.io/loadbalancerIPs: x.x.x.x`
 - Setting the special IP `0.0.0.0` for DHCP workflow.
 - Support single stack IPv6 or IPv4
+- Support for dualstack via the annotation: `kube-vip.io/loadbalancerIPs: 192.168.10.10,2001:db8::1`
 - Support ascending and descending search order by setting search-order=desc
 
 ## Installing the `kube-vip-cloud-provider`
@@ -87,7 +89,8 @@ kubectl create configmap --namespace kube-system kubevip --from-literal range-gl
 
 ## Multiple pools or ranges
 
-We can apply multiple pools or ranges by seperating them with commas.. i.e. `192.168.0.200/30,192.168.0.200/29` or `2001::12/127,2001::10/127` or `192.168.0.10-192.168.0.11,192.168.0.10-192.168.0.13` or `2001::10-2001::14,2001::20-2001::24`
+We can apply multiple pools or ranges by seperating them with commas.. i.e. `192.168.0.200/30,192.168.0.200/29` or `2001::12/127,2001::10/127` or `192.168.0.10-192.168.0.11,192.168.0.10-192.168.0.13` or `2001::10-2001::14,2001::20-2001::24` or `192.168.0.200/30,2001::10/127`
+
 
 ## Special DHCP CIDR
 
