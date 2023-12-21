@@ -439,6 +439,72 @@ func Test_discoverVIPs(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "dualstack pool with PreferDualStack IPv4,IPv6 service, but the IPv6 pool has no available addresses",
+			args: args{
+				ipFamilyPolicy:     ipFamilyPolicyPtr(v1.IPFamilyPolicyPreferDualStack),
+				ipFamilies:         []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol},
+				pool:               "10.10.10.8-10.10.10.9,fd00::1-fd00::2",
+				existingServiceIPS: []string{"fd00::1", "fd00::2"},
+			},
+			want:    "10.10.10.8",
+			wantErr: false,
+		},
+		{
+			name: "dualstack pool with PreferDualStack IPv4,IPv6 service, but the IPv4 pool has no available addresses",
+			args: args{
+				ipFamilyPolicy:     ipFamilyPolicyPtr(v1.IPFamilyPolicyPreferDualStack),
+				ipFamilies:         []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol},
+				pool:               "10.10.10.8-10.10.10.9,fd00::1-fd00::2",
+				existingServiceIPS: []string{"10.10.10.8", "10.10.10.9"},
+			},
+			want:    "fd00::1",
+			wantErr: false,
+		},
+		{
+			name: "dualstack pool with PreferDualStack IPv6,IPv4 service, but the IPv6 pool has no available addresses",
+			args: args{
+				ipFamilyPolicy:     ipFamilyPolicyPtr(v1.IPFamilyPolicyPreferDualStack),
+				ipFamilies:         []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol},
+				pool:               "10.10.10.8-10.10.10.9,fd00::1-fd00::2",
+				existingServiceIPS: []string{"fd00::1", "fd00::2"},
+			},
+			want:    "10.10.10.8",
+			wantErr: false,
+		},
+		{
+			name: "dualstack pool with PreferDualStack IPv6,IPv4 service, but the IPv4 pool has no available addresses",
+			args: args{
+				ipFamilyPolicy:     ipFamilyPolicyPtr(v1.IPFamilyPolicyPreferDualStack),
+				ipFamilies:         []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol},
+				pool:               "10.10.10.8-10.10.10.9,fd00::1-fd00::2",
+				existingServiceIPS: []string{"10.10.10.8", "10.10.10.9"},
+			},
+			want:    "fd00::1",
+			wantErr: false,
+		},
+		{
+			name: "dualstack pool with PreferDualStack IPv4,IPv6 service, but no pools have available addresses",
+			args: args{
+				ipFamilyPolicy:     ipFamilyPolicyPtr(v1.IPFamilyPolicyPreferDualStack),
+				ipFamilies:         []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol},
+				pool:               "10.10.10.8-10.10.10.9,fd00::1-fd00::2",
+				existingServiceIPS: []string{"10.10.10.8", "10.10.10.9", "fd00::1", "fd00::2"},
+			},
+			want:    "",
+			wantErr: true,
+		},
+		{
+			name: "dualstack pool with PreferDualStack IPv4,IPv6 service, but there is an invalid pool",
+			args: args{
+				ipFamilyPolicy:     ipFamilyPolicyPtr(v1.IPFamilyPolicyPreferDualStack),
+				ipFamilies:         []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol},
+				pool:               "10.10.10.8-10.10.10.9,fd00::1-fd00::2,invalid-pool",
+				existingServiceIPS: []string{},
+			},
+			want:    "",
+			wantErr: true,
+		},
+		{
 			name: "IPv4 pool with RequireDualStack service",
 			args: args{
 				ipFamilyPolicy: ipFamilyPolicyPtr(v1.IPFamilyPolicyRequireDualStack),
@@ -488,6 +554,61 @@ func Test_discoverVIPs(t *testing.T) {
 			want:    "fd00::1,10.10.10.8",
 			wantErr: false,
 		},
+		{
+			name: "dualstack pool with RequireDualStack IPv4,IPv6 service, but the IPv6 pool has no available addresses",
+			args: args{
+				ipFamilyPolicy:     ipFamilyPolicyPtr(v1.IPFamilyPolicyRequireDualStack),
+				ipFamilies:         []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol},
+				pool:               "10.10.10.8-10.10.10.9,fd00::1-fd00::2",
+				existingServiceIPS: []string{"fd00::1", "fd00::2"},
+			},
+			want:    "",
+			wantErr: true,
+		},
+		{
+			name: "dualstack pool with RequireDualStack IPv4,IPv6 service, but the IPv4 pool has no available addresses",
+			args: args{
+				ipFamilyPolicy:     ipFamilyPolicyPtr(v1.IPFamilyPolicyRequireDualStack),
+				ipFamilies:         []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol},
+				pool:               "10.10.10.8-10.10.10.9,fd00::1-fd00::2",
+				existingServiceIPS: []string{"10.10.10.8", "10.10.10.9"},
+			},
+			want:    "",
+			wantErr: true,
+		},
+		{
+			name: "dualstack pool with RequireDualStack IPv6,IPv4 service, but the IPv6 pool has no available addresses",
+			args: args{
+				ipFamilyPolicy:     ipFamilyPolicyPtr(v1.IPFamilyPolicyRequireDualStack),
+				ipFamilies:         []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol},
+				pool:               "10.10.10.8-10.10.10.9,fd00::1-fd00::2",
+				existingServiceIPS: []string{"fd00::1", "fd00::2"},
+			},
+			want:    "",
+			wantErr: true,
+		},
+		{
+			name: "dualstack pool with RequireDualStack IPv6,IPv4 service, but the IPv4 pool has no available addresses",
+			args: args{
+				ipFamilyPolicy:     ipFamilyPolicyPtr(v1.IPFamilyPolicyRequireDualStack),
+				ipFamilies:         []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol},
+				pool:               "10.10.10.8-10.10.10.9,fd00::1-fd00::2",
+				existingServiceIPS: []string{"10.10.10.8", "10.10.10.9"},
+			},
+			want:    "",
+			wantErr: true,
+		},
+		{
+			name: "dualstack pool with RequireDualStack IPv4,IPv6 service, but no pools have available addresses",
+			args: args{
+				ipFamilyPolicy:     ipFamilyPolicyPtr(v1.IPFamilyPolicyRequireDualStack),
+				ipFamilies:         []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol},
+				pool:               "10.10.10.8-10.10.10.9,fd00::1-fd00::2",
+				existingServiceIPS: []string{"10.10.10.8", "10.10.10.9", "fd00::1", "fd00::2"},
+			},
+			want:    "",
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -507,7 +628,7 @@ func Test_discoverVIPs(t *testing.T) {
 				return
 			}
 
-			gotString, err := discoverVIPs("unknown-namespace", tt.args.pool, s, false, tt.args.ipFamilyPolicy, tt.args.ipFamilies)
+			gotString, err := discoverVIPs("discover-vips-test-ns", tt.args.pool, s, false, tt.args.ipFamilyPolicy, tt.args.ipFamilies)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("discoverVIP() error: %v, expected: %v", err, tt.wantErr)
 				return

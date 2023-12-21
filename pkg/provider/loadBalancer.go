@@ -330,23 +330,47 @@ func discoverVIPs(
 		secondaryPool = ipv4Pool
 	}
 	// Provide VIPs from both IP families if possible (guaranteed if RequireDualStack)
+	var primaryPoolErr, secondaryPoolErr error
 	if len(primaryPool) > 0 {
 		primaryVip, err := discoverAddress(namespace, primaryPool, inUseIPSet, descOrder)
-		if err != nil {
+		if err == nil {
+			_, _ = vipBuilder.WriteString(primaryVip)
+		} else if _, outOfIPs := err.(*ipam.OutOfIPsError); outOfIPs {
+			primaryPoolErr = err
+		} else {
 			return "", err
 		}
-		_, _ = vipBuilder.WriteString(primaryVip)
 	}
 	if len(secondaryPool) > 0 {
 		secondaryVip, err := discoverAddress(namespace, secondaryPool, inUseIPSet, descOrder)
-		if err != nil {
+		if err == nil {
+			if vipBuilder.Len() > 0 {
+				vipBuilder.WriteByte(',')
+			}
+			_, _ = vipBuilder.WriteString(secondaryVip)
+		} else if _, outOfIPs := err.(*ipam.OutOfIPsError); outOfIPs {
+			secondaryPoolErr = err
+		} else {
 			return "", err
 		}
-		if vipBuilder.Len() > 0 {
-			vipBuilder.WriteByte(',')
-		}
-		_, _ = vipBuilder.WriteString(secondaryVip)
 	}
+	if *ipFamilyPolicy == v1.IPFamilyPolicyPreferDualStack {
+		if primaryPoolErr != nil && secondaryPoolErr != nil {
+			return "", fmt.Errorf("could not allocate any IP address for PreferDualStack service: %s", renderErrors(primaryPoolErr, secondaryPoolErr))
+		}
+		singleError := primaryPoolErr
+		if secondaryPoolErr != nil {
+			singleError = secondaryPoolErr
+		}
+		if singleError != nil {
+			klog.Warningf("PreferDualStack service will be single-stack because of error: %s", singleError)
+		}
+	} else if *ipFamilyPolicy == v1.IPFamilyPolicyRequireDualStack {
+		if primaryPoolErr != nil || secondaryPoolErr != nil {
+			return "", fmt.Errorf("could not allocate required IP addresses for RequireDualStack service: %s", renderErrors(primaryPoolErr, secondaryPoolErr))
+		}
+	}
+
 	return vipBuilder.String(), nil
 }
 
@@ -381,4 +405,14 @@ func getSearchOrder(cm *v1.ConfigMap) (descOrder bool) {
 		}
 	}
 	return false
+}
+
+func renderErrors(errs ...error) string {
+	s := strings.Builder{}
+	for _, err := range errs {
+		if err != nil {
+			s.WriteString(fmt.Sprintf("\n\t- %s", err))
+		}
+	}
+	return s.String()
 }
