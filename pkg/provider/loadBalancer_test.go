@@ -419,6 +419,15 @@ func Test_discoverVIPs(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "dualstack pool with PreferDualStack service with no IP families explicitly specified",
+			args: args{
+				ipFamilyPolicy: ipFamilyPolicyPtr(v1.IPFamilyPolicyPreferDualStack),
+				pool:           "10.10.10.8-10.10.10.15,fd00::1-fd00::10",
+			},
+			want:    "10.10.10.8,fd00::1",
+			wantErr: false,
+		},
+		{
 			name: "dualstack pool with PreferDualStack IPv4,IPv6 service",
 			args: args{
 				ipFamilyPolicy: ipFamilyPolicyPtr(v1.IPFamilyPolicyPreferDualStack),
