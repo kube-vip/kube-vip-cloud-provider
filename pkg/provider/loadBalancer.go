@@ -178,11 +178,13 @@ func (k *kubevipLoadBalancerManager) syncLoadBalancer(ctx context.Context, servi
 
 	builder := &netipx.IPSetBuilder{}
 	for x := range svcs.Items {
-		addr, err := netip.ParseAddr(svcs.Items[x].Annotations[loadbalancerIPsAnnotations])
-		if err != nil {
-			return nil, err
+		if ip, ok := svcs.Items[x].Annotations[loadbalancerIPsAnnotations]; ok {
+			addr, err := netip.ParseAddr(ip)
+			if err != nil {
+				return nil, err
+			}
+			builder.Add(addr)
 		}
-		builder.Add(addr)
 	}
 	inUseSet, err := builder.IPSet()
 	if err != nil {
