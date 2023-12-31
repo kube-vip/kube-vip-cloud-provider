@@ -314,6 +314,342 @@ func Test_DiscoveryAddressRange(t *testing.T) {
 	}
 }
 
+func ipFamilyPolicyPtr(p v1.IPFamilyPolicy) *v1.IPFamilyPolicy {
+	return &p
+}
+
+func Test_discoverVIPs(t *testing.T) {
+	type args struct {
+		ipFamilyPolicy     *v1.IPFamilyPolicy
+		ipFamilies         []v1.IPFamily
+		pool               string
+		existingServiceIPS []string
+	}
+
+	tests := []struct {
+		name    string
+		args    args
+		want    string
+		wantErr bool
+	}{
+		{
+			name: "IPv4 pool",
+			args: args{
+				ipFamilyPolicy:     nil,
+				ipFamilies:         nil,
+				pool:               "10.10.10.8-10.10.10.15",
+				existingServiceIPS: []string{"10.10.10.8", "10.10.10.9", "10.10.10.10", "10.10.10.12"},
+			},
+			want:    "10.10.10.11",
+			wantErr: false,
+		},
+		{
+			name: "IPv4 pool with IPv4 service",
+			args: args{
+				ipFamilyPolicy:     ipFamilyPolicyPtr(v1.IPFamilyPolicySingleStack),
+				ipFamilies:         []v1.IPFamily{v1.IPv4Protocol},
+				pool:               "10.10.10.8-10.10.10.15",
+				existingServiceIPS: []string{"10.10.10.8", "10.10.10.9", "10.10.10.10", "10.10.10.12"},
+			},
+			want:    "10.10.10.11",
+			wantErr: false,
+		},
+		{
+			name: "IPv6 pool",
+			args: args{
+				ipFamilyPolicy:     nil,
+				ipFamilies:         nil,
+				pool:               "fd00::1-fd00::10",
+				existingServiceIPS: []string{"fd00::1", "fd00::2", "fd00::4"},
+			},
+			want:    "fd00::3",
+			wantErr: false,
+		},
+		{
+			name: "IPv6 pool with IPv6 service",
+			args: args{
+				ipFamilyPolicy:     ipFamilyPolicyPtr(v1.IPFamilyPolicySingleStack),
+				ipFamilies:         []v1.IPFamily{v1.IPv6Protocol},
+				pool:               "fd00::1-fd00::10",
+				existingServiceIPS: []string{"fd00::1", "fd00::2", "fd00::4"},
+			},
+			want:    "fd00::3",
+			wantErr: false,
+		},
+		{
+			name: "IPv6 pool with IPv4 service",
+			args: args{
+				ipFamilyPolicy: ipFamilyPolicyPtr(v1.IPFamilyPolicySingleStack),
+				ipFamilies:     []v1.IPFamily{v1.IPv4Protocol},
+				pool:           "fd00::1-fd00::10",
+			},
+			want:    "",
+			wantErr: true,
+		},
+		{
+			name: "IPv4 pool with IPv6 service",
+			args: args{
+				ipFamilyPolicy: ipFamilyPolicyPtr(v1.IPFamilyPolicySingleStack),
+				ipFamilies:     []v1.IPFamily{v1.IPv6Protocol},
+				pool:           "10.10.10.8-10.10.10.15",
+			},
+			want:    "",
+			wantErr: true,
+		},
+		{
+			name: "IPv4 pool with PreferDualStack service",
+			args: args{
+				ipFamilyPolicy:     ipFamilyPolicyPtr(v1.IPFamilyPolicyPreferDualStack),
+				ipFamilies:         []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol},
+				pool:               "10.10.10.8-10.10.10.15",
+				existingServiceIPS: []string{"10.10.10.8", "10.10.10.9", "10.10.10.10", "10.10.10.12"},
+			},
+			want:    "10.10.10.11",
+			wantErr: false,
+		},
+		{
+			name: "IPv6 pool with PreferDualStack service",
+			args: args{
+				ipFamilyPolicy:     ipFamilyPolicyPtr(v1.IPFamilyPolicyPreferDualStack),
+				ipFamilies:         []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol},
+				pool:               "fd00::1-fd00::10",
+				existingServiceIPS: []string{"fd00::1", "fd00::2", "fd00::4"},
+			},
+			want:    "fd00::3",
+			wantErr: false,
+		},
+		{
+			name: "dualstack pool with PreferDualStack service with no IP families explicitly specified",
+			args: args{
+				ipFamilyPolicy: ipFamilyPolicyPtr(v1.IPFamilyPolicyPreferDualStack),
+				pool:           "10.10.10.8-10.10.10.15,fd00::1-fd00::10",
+			},
+			want:    "10.10.10.8,fd00::1",
+			wantErr: false,
+		},
+		{
+			name: "dualstack pool with PreferDualStack IPv4,IPv6 service",
+			args: args{
+				ipFamilyPolicy: ipFamilyPolicyPtr(v1.IPFamilyPolicyPreferDualStack),
+				ipFamilies:     []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol},
+				pool:           "10.10.10.8-10.10.10.15,fd00::1-fd00::10",
+			},
+			want:    "10.10.10.8,fd00::1",
+			wantErr: false,
+		},
+		{
+			name: "dualstack pool with PreferDualStack IPv6,IPv4 service",
+			args: args{
+				ipFamilyPolicy: ipFamilyPolicyPtr(v1.IPFamilyPolicyPreferDualStack),
+				ipFamilies:     []v1.IPFamily{v1.IPv6Protocol, v1.IPv4Protocol},
+				pool:           "10.10.10.8-10.10.10.15,fd00::1-fd00::10",
+			},
+			want:    "fd00::1,10.10.10.8",
+			wantErr: false,
+		},
+		{
+			name: "dualstack pool with PreferDualStack IPv4,IPv6 service, but the IPv6 pool has no available addresses",
+			args: args{
+				ipFamilyPolicy:     ipFamilyPolicyPtr(v1.IPFamilyPolicyPreferDualStack),
+				ipFamilies:         []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol},
+				pool:               "10.10.10.8-10.10.10.9,fd00::1-fd00::2",
+				existingServiceIPS: []string{"fd00::1", "fd00::2"},
+			},
+			want:    "10.10.10.8",
+			wantErr: false,
+		},
+		{
+			name: "dualstack pool with PreferDualStack IPv4,IPv6 service, but the IPv4 pool has no available addresses",
+			args: args{
+				ipFamilyPolicy:     ipFamilyPolicyPtr(v1.IPFamilyPolicyPreferDualStack),
+				ipFamilies:         []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol},
+				pool:               "10.10.10.8-10.10.10.9,fd00::1-fd00::2",
+				existingServiceIPS: []string{"10.10.10.8", "10.10.10.9"},
+			},
+			want:    "fd00::1",
+			wantErr: false,
+		},
+		{
+			name: "dualstack pool with PreferDualStack IPv6,IPv4 service, but the IPv6 pool has no available addresses",
+			args: args{
+				ipFamilyPolicy:     ipFamilyPolicyPtr(v1.IPFamilyPolicyPreferDualStack),
+				ipFamilies:         []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol},
+				pool:               "10.10.10.8-10.10.10.9,fd00::1-fd00::2",
+				existingServiceIPS: []string{"fd00::1", "fd00::2"},
+			},
+			want:    "10.10.10.8",
+			wantErr: false,
+		},
+		{
+			name: "dualstack pool with PreferDualStack IPv6,IPv4 service, but the IPv4 pool has no available addresses",
+			args: args{
+				ipFamilyPolicy:     ipFamilyPolicyPtr(v1.IPFamilyPolicyPreferDualStack),
+				ipFamilies:         []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol},
+				pool:               "10.10.10.8-10.10.10.9,fd00::1-fd00::2",
+				existingServiceIPS: []string{"10.10.10.8", "10.10.10.9"},
+			},
+			want:    "fd00::1",
+			wantErr: false,
+		},
+		{
+			name: "dualstack pool with PreferDualStack IPv4,IPv6 service, but no pools have available addresses",
+			args: args{
+				ipFamilyPolicy:     ipFamilyPolicyPtr(v1.IPFamilyPolicyPreferDualStack),
+				ipFamilies:         []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol},
+				pool:               "10.10.10.8-10.10.10.9,fd00::1-fd00::2",
+				existingServiceIPS: []string{"10.10.10.8", "10.10.10.9", "fd00::1", "fd00::2"},
+			},
+			want:    "",
+			wantErr: true,
+		},
+		{
+			name: "dualstack pool with PreferDualStack IPv4,IPv6 service, but there is an invalid pool",
+			args: args{
+				ipFamilyPolicy:     ipFamilyPolicyPtr(v1.IPFamilyPolicyPreferDualStack),
+				ipFamilies:         []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol},
+				pool:               "10.10.10.8-10.10.10.9,fd00::1-fd00::2,invalid-pool",
+				existingServiceIPS: []string{},
+			},
+			want:    "",
+			wantErr: true,
+		},
+		{
+			name: "IPv4 pool with RequireDualStack service",
+			args: args{
+				ipFamilyPolicy: ipFamilyPolicyPtr(v1.IPFamilyPolicyRequireDualStack),
+				ipFamilies:     []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol},
+				pool:           "10.10.10.8-10.10.10.15",
+			},
+			want:    "",
+			wantErr: true,
+		},
+		{
+			name: "IPv6 pool with RequireDualStack service",
+			args: args{
+				ipFamilyPolicy: ipFamilyPolicyPtr(v1.IPFamilyPolicyRequireDualStack),
+				ipFamilies:     []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol},
+				pool:           "fd00::1-fd00::10",
+			},
+			want:    "",
+			wantErr: true,
+		},
+		{
+			name: "empty pool with RequireDualStack service",
+			args: args{
+				ipFamilyPolicy: ipFamilyPolicyPtr(v1.IPFamilyPolicyRequireDualStack),
+				ipFamilies:     []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol},
+				pool:           "",
+			},
+			want:    "",
+			wantErr: true,
+		},
+		{
+			name: "dualstack pool with RequireDualStack IPv4,IPv6 service",
+			args: args{
+				ipFamilyPolicy: ipFamilyPolicyPtr(v1.IPFamilyPolicyRequireDualStack),
+				ipFamilies:     []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol},
+				pool:           "10.10.10.8-10.10.10.15,fd00::1-fd00::10",
+			},
+			want:    "10.10.10.8,fd00::1",
+			wantErr: false,
+		},
+		{
+			name: "dualstack pool with RequireDualStack IPv6,IPv4 service",
+			args: args{
+				ipFamilyPolicy: ipFamilyPolicyPtr(v1.IPFamilyPolicyRequireDualStack),
+				ipFamilies:     []v1.IPFamily{v1.IPv6Protocol, v1.IPv4Protocol},
+				pool:           "10.10.10.8-10.10.10.15,fd00::1-fd00::10",
+			},
+			want:    "fd00::1,10.10.10.8",
+			wantErr: false,
+		},
+		{
+			name: "dualstack pool with RequireDualStack IPv4,IPv6 service, but the IPv6 pool has no available addresses",
+			args: args{
+				ipFamilyPolicy:     ipFamilyPolicyPtr(v1.IPFamilyPolicyRequireDualStack),
+				ipFamilies:         []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol},
+				pool:               "10.10.10.8-10.10.10.9,fd00::1-fd00::2",
+				existingServiceIPS: []string{"fd00::1", "fd00::2"},
+			},
+			want:    "",
+			wantErr: true,
+		},
+		{
+			name: "dualstack pool with RequireDualStack IPv4,IPv6 service, but the IPv4 pool has no available addresses",
+			args: args{
+				ipFamilyPolicy:     ipFamilyPolicyPtr(v1.IPFamilyPolicyRequireDualStack),
+				ipFamilies:         []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol},
+				pool:               "10.10.10.8-10.10.10.9,fd00::1-fd00::2",
+				existingServiceIPS: []string{"10.10.10.8", "10.10.10.9"},
+			},
+			want:    "",
+			wantErr: true,
+		},
+		{
+			name: "dualstack pool with RequireDualStack IPv6,IPv4 service, but the IPv6 pool has no available addresses",
+			args: args{
+				ipFamilyPolicy:     ipFamilyPolicyPtr(v1.IPFamilyPolicyRequireDualStack),
+				ipFamilies:         []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol},
+				pool:               "10.10.10.8-10.10.10.9,fd00::1-fd00::2",
+				existingServiceIPS: []string{"fd00::1", "fd00::2"},
+			},
+			want:    "",
+			wantErr: true,
+		},
+		{
+			name: "dualstack pool with RequireDualStack IPv6,IPv4 service, but the IPv4 pool has no available addresses",
+			args: args{
+				ipFamilyPolicy:     ipFamilyPolicyPtr(v1.IPFamilyPolicyRequireDualStack),
+				ipFamilies:         []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol},
+				pool:               "10.10.10.8-10.10.10.9,fd00::1-fd00::2",
+				existingServiceIPS: []string{"10.10.10.8", "10.10.10.9"},
+			},
+			want:    "",
+			wantErr: true,
+		},
+		{
+			name: "dualstack pool with RequireDualStack IPv4,IPv6 service, but no pools have available addresses",
+			args: args{
+				ipFamilyPolicy:     ipFamilyPolicyPtr(v1.IPFamilyPolicyRequireDualStack),
+				ipFamilies:         []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol},
+				pool:               "10.10.10.8-10.10.10.9,fd00::1-fd00::2",
+				existingServiceIPS: []string{"10.10.10.8", "10.10.10.9", "fd00::1", "fd00::2"},
+			},
+			want:    "",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			builder := &netipx.IPSetBuilder{}
+			for i := range tt.args.existingServiceIPS {
+				addr, err := netip.ParseAddr(tt.args.existingServiceIPS[i])
+				if err != nil {
+					t.Errorf("discoverVIP() error = %v", err)
+					return
+				}
+				builder.Add(addr)
+			}
+			s, err := builder.IPSet()
+			if err != nil {
+				t.Errorf("discoverVIP() error = %v", err)
+				return
+			}
+
+			gotString, err := discoverVIPs("discover-vips-test-ns", tt.args.pool, s, false, tt.args.ipFamilyPolicy, tt.args.ipFamilies)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("discoverVIP() error: %v, expected: %v", err, tt.wantErr)
+				return
+			}
+			if !assert.EqualValues(t, tt.want, gotString) {
+				t.Errorf("discoverVIP() returned: %s, expected: %s", gotString, tt.want)
+			}
+		})
+	}
+
+}
+
 func Test_syncLoadBalancer(t *testing.T) {
 
 	tests := []struct {
@@ -483,6 +819,46 @@ func Test_syncLoadBalancer(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "dualstack loadbalancer",
+			originalService: v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test",
+					Name:      "name",
+				},
+				Spec: v1.ServiceSpec{
+					IPFamilyPolicy: ipFamilyPolicyPtr(v1.IPFamilyPolicyRequireDualStack),
+					IPFamilies:     []v1.IPFamily{v1.IPv6Protocol, v1.IPv4Protocol},
+				},
+			},
+
+			poolConfigMap: &v1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      KubeVipClientConfig,
+					Namespace: KubeVipClientConfigNamespace,
+				},
+				Data: map[string]string{
+					"cidr-global": "10.120.120.1/24,fe80::10/126",
+				},
+			},
+			expectedService: v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test",
+					Name:      "name",
+					Labels: map[string]string{
+						"implementation": "kube-vip",
+					},
+					Annotations: map[string]string{
+						"kube-vip.io/loadbalancerIPs": "fe80::10,10.120.120.1",
+					},
+				},
+				Spec: v1.ServiceSpec{
+					IPFamilyPolicy: ipFamilyPolicyPtr(v1.IPFamilyPolicyRequireDualStack),
+					IPFamilies:     []v1.IPFamily{v1.IPv6Protocol, v1.IPv4Protocol},
+					LoadBalancerIP: "fe80::10",
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -529,7 +905,7 @@ func Test_syncLoadBalancer(t *testing.T) {
 				t.Error(err)
 			}
 
-			assert.EqualValues(t, *resService, tt.expectedService)
+			assert.EqualValues(t, tt.expectedService, *resService)
 		})
 	}
 }

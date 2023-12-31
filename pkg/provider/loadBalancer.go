@@ -20,7 +20,7 @@ import (
 const (
 	// this annotation is for specifying IPs for a loadbalancer
 	// use plural for dual stack support in the future
-	// Example: kube-vip.io/loadbalancerIPs: 10.1.2.3
+	// Example: kube-vip.io/loadbalancerIPs: 10.1.2.3,fd00::100
 	loadbalancerIPsAnnotations = "kube-vip.io/loadbalancerIPs"
 	implementationLabelKey     = "implementation"
 	implementationLabelValue   = "kube-vip"
@@ -192,8 +192,7 @@ func (k *kubevipLoadBalancerManager) syncLoadBalancer(ctx context.Context, servi
 	descOrder := getSearchOrder(controllerCM)
 
 	// If the LoadBalancer address is empty, then do a local IPAM lookup
-	loadBalancerIP, err := discoverAddress(service.Namespace, pool, inUseSet, descOrder)
-
+	loadBalancerIPs, err := discoverVIPs(service.Namespace, pool, inUseSet, descOrder, service.Spec.IPFamilyPolicy, service.Spec.IPFamilies)
 	if err != nil {
 		return nil, err
 	}
@@ -205,7 +204,7 @@ func (k *kubevipLoadBalancerManager) syncLoadBalancer(ctx context.Context, servi
 			return getErr
 		}
 
-		klog.Infof("Updating service [%s], with load balancer IPAM address [%s]", service.Name, loadBalancerIP)
+		klog.Infof("Updating service [%s], with load balancer IPAM address(es) [%s]", service.Name, loadBalancerIPs)
 
 		if recentService.Labels == nil {
 			// Just because ..
@@ -218,11 +217,11 @@ func (k *kubevipLoadBalancerManager) syncLoadBalancer(ctx context.Context, servi
 			recentService.Annotations = make(map[string]string)
 		}
 		// use annotation instead of label to support ipv6
-		recentService.Annotations[loadbalancerIPsAnnotations] = loadBalancerIP
+		recentService.Annotations[loadbalancerIPsAnnotations] = loadBalancerIPs
 
 		// this line will be removed once kube-vip can recognize annotations
 		// Set IPAM address to Load Balancer Service
-		recentService.Spec.LoadBalancerIP = loadBalancerIP
+		recentService.Spec.LoadBalancerIP = strings.Split(loadBalancerIPs, ",")[0]
 
 		// Update the actual service with the address and the labels
 		_, updateErr := k.kubeClient.CoreV1().Services(recentService.Namespace).Update(ctx, recentService, metav1.UpdateOptions{})
@@ -276,6 +275,105 @@ func discoverPool(cm *v1.ConfigMap, namespace, configMapName string) (pool strin
 	return "", false, fmt.Errorf("no address pools could be found")
 }
 
+func discoverVIPs(
+	namespace, pool string, inUseIPSet *netipx.IPSet, descOrder bool,
+	ipFamilyPolicy *v1.IPFamilyPolicy, ipFamilies []v1.IPFamily,
+) (vips string, err error) {
+	var ipv4Pool, ipv6Pool string
+
+	// Check if DHCP is required
+	if pool == "0.0.0.0/32" {
+		return "0.0.0.0", nil
+		// Check if ip pool contains a cidr, if not assume it is a range
+	} else if len(pool) == 0 {
+		return "", fmt.Errorf("could not discover address: pool is not specified")
+	} else if strings.Contains(pool, "/") {
+		ipv4Pool, ipv6Pool, err = ipam.SplitCIDRsByIPFamily(pool)
+	} else {
+		ipv4Pool, ipv6Pool, err = ipam.SplitRangesByIPFamily(pool)
+	}
+	if err != nil {
+		return "", err
+	}
+
+	vipBuilder := strings.Builder{}
+
+	// Handle single stack case
+	if ipFamilyPolicy == nil || *ipFamilyPolicy == v1.IPFamilyPolicySingleStack {
+		ipPool := ipv4Pool
+		if len(ipFamilies) == 0 {
+			if len(ipv4Pool) == 0 {
+				ipPool = ipv6Pool
+			}
+		} else if ipFamilies[0] == v1.IPv6Protocol {
+			ipPool = ipv6Pool
+		}
+		if len(ipPool) == 0 {
+			return "", fmt.Errorf("could not find suitable pool for the IP family of the service")
+		}
+		return discoverAddress(namespace, ipPool, inUseIPSet, descOrder)
+	}
+
+	// Handle dual stack case
+	if *ipFamilyPolicy == v1.IPFamilyPolicyRequireDualStack {
+		// With RequireDualStack, we want to make sure both pools with both IP
+		// families exist
+		if len(ipv4Pool) == 0 || len(ipv6Pool) == 0 {
+			return "", fmt.Errorf("service requires dual-stack, but the configuration does not have both IPv4 and IPv6 pools listed for the namespace")
+		}
+	}
+
+	primaryPool := ipv4Pool
+	secondaryPool := ipv6Pool
+	if len(ipFamilies) > 0 && ipFamilies[0] == v1.IPv6Protocol {
+		primaryPool = ipv6Pool
+		secondaryPool = ipv4Pool
+	}
+	// Provide VIPs from both IP families if possible (guaranteed if RequireDualStack)
+	var primaryPoolErr, secondaryPoolErr error
+	if len(primaryPool) > 0 {
+		primaryVip, err := discoverAddress(namespace, primaryPool, inUseIPSet, descOrder)
+		if err == nil {
+			_, _ = vipBuilder.WriteString(primaryVip)
+		} else if _, outOfIPs := err.(*ipam.OutOfIPsError); outOfIPs {
+			primaryPoolErr = err
+		} else {
+			return "", err
+		}
+	}
+	if len(secondaryPool) > 0 {
+		secondaryVip, err := discoverAddress(namespace, secondaryPool, inUseIPSet, descOrder)
+		if err == nil {
+			if vipBuilder.Len() > 0 {
+				vipBuilder.WriteByte(',')
+			}
+			_, _ = vipBuilder.WriteString(secondaryVip)
+		} else if _, outOfIPs := err.(*ipam.OutOfIPsError); outOfIPs {
+			secondaryPoolErr = err
+		} else {
+			return "", err
+		}
+	}
+	if *ipFamilyPolicy == v1.IPFamilyPolicyPreferDualStack {
+		if primaryPoolErr != nil && secondaryPoolErr != nil {
+			return "", fmt.Errorf("could not allocate any IP address for PreferDualStack service: %s", renderErrors(primaryPoolErr, secondaryPoolErr))
+		}
+		singleError := primaryPoolErr
+		if secondaryPoolErr != nil {
+			singleError = secondaryPoolErr
+		}
+		if singleError != nil {
+			klog.Warningf("PreferDualStack service will be single-stack because of error: %s", singleError)
+		}
+	} else if *ipFamilyPolicy == v1.IPFamilyPolicyRequireDualStack {
+		if primaryPoolErr != nil || secondaryPoolErr != nil {
+			return "", fmt.Errorf("could not allocate required IP addresses for RequireDualStack service: %s", renderErrors(primaryPoolErr, secondaryPoolErr))
+		}
+	}
+
+	return vipBuilder.String(), nil
+}
+
 func discoverAddress(namespace, pool string, inUseIPSet *netipx.IPSet, descOrder bool) (vip string, err error) {
 	// Check if DHCP is required
 	if pool == "0.0.0.0/32" {
@@ -307,4 +405,14 @@ func getSearchOrder(cm *v1.ConfigMap) (descOrder bool) {
 		}
 	}
 	return false
+}
+
+func renderErrors(errs ...error) string {
+	s := strings.Builder{}
+	for _, err := range errs {
+		if err != nil {
+			s.WriteString(fmt.Sprintf("\n\t- %s", err))
+		}
+	}
+	return s.String()
 }

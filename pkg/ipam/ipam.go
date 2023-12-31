@@ -9,6 +9,20 @@ import (
 	"k8s.io/klog"
 )
 
+type OutOfIPsError struct {
+	namespace string
+	pool      string
+	isCidr    bool
+}
+
+func (e *OutOfIPsError) Error() string {
+	what := "range"
+	if e.isCidr {
+		what = "cidr"
+	}
+	return fmt.Sprintf("no addresses available in [%s] %s [%s]", e.namespace, what, e.pool)
+}
+
 // Manager - handles the addresses for each namespace/vip
 var Manager []ipManager
 
@@ -46,7 +60,7 @@ func FindAvailableHostFromRange(namespace, ipRange string, inUseIPSet *netipx.IP
 
 			addr, err := FindFreeAddress(Manager[x].poolIPSet, inUseIPSet, descOrder)
 			if err != nil {
-				return "", fmt.Errorf("no addresses available in [%s] range [%s]", namespace, ipRange)
+				return "", &OutOfIPsError{namespace: namespace, pool: ipRange, isCidr: false}
 			}
 			return addr.String(), nil
 		}
@@ -67,7 +81,7 @@ func FindAvailableHostFromRange(namespace, ipRange string, inUseIPSet *netipx.IP
 
 	addr, err := FindFreeAddress(poolIPSet, inUseIPSet, descOrder)
 	if err != nil {
-		return "", fmt.Errorf("no addresses available in [%s] range [%s]", namespace, ipRange)
+		return "", &OutOfIPsError{namespace: namespace, pool: ipRange, isCidr: false}
 	}
 	return addr.String(), nil
 }
@@ -91,7 +105,7 @@ func FindAvailableHostFromCidr(namespace, cidr string, inUseIPSet *netipx.IPSet,
 			}
 			addr, err := FindFreeAddress(Manager[x].poolIPSet, inUseIPSet, descOrder)
 			if err != nil {
-				return "", fmt.Errorf("no addresses available in [%s] cidr [%s]", namespace, cidr)
+				return "", &OutOfIPsError{namespace: namespace, pool: cidr, isCidr: true}
 			}
 			return addr.String(), nil
 
@@ -111,7 +125,7 @@ func FindAvailableHostFromCidr(namespace, cidr string, inUseIPSet *netipx.IPSet,
 
 	addr, err := FindFreeAddress(poolIPSet, inUseIPSet, descOrder)
 	if err != nil {
-		return "", fmt.Errorf("no addresses available in [%s] cidr [%s]", namespace, cidr)
+		return "", &OutOfIPsError{namespace: namespace, pool: cidr, isCidr: true}
 	}
 	return addr.String(), nil
 

@@ -14,9 +14,11 @@ The `kube-vip-cloud-provider` will only implement the `loadBalancer` functionali
 - IP ranges [start address - end address]
 - Multiple pools by CIDR per namespace
 - Multiple IP ranges per namespace (handles overlapping ranges)
+- Support for mixed IP families when specifying multiple pools or ranges
 - Setting of static addresses through `--load-balancer-ip=x.x.x.x` or through annotations `kube-vip.io/loadbalancerIPs: x.x.x.x`
 - Setting the special IP `0.0.0.0` for DHCP workflow.
 - Support single stack IPv6 or IPv4
+- Support for dualstack via the annotation: `kube-vip.io/loadbalancerIPs: 192.168.10.10,2001:db8::1`
 - Support ascending and descending search order by setting search-order=desc
 
 ## Installing the `kube-vip-cloud-provider`
@@ -87,7 +89,46 @@ kubectl create configmap --namespace kube-system kubevip --from-literal range-gl
 
 ## Multiple pools or ranges
 
-We can apply multiple pools or ranges by seperating them with commas.. i.e. `192.168.0.200/30,192.168.0.200/29` or `2001::12/127,2001::10/127` or `192.168.0.10-192.168.0.11,192.168.0.10-192.168.0.13` or `2001::10-2001::14,2001::20-2001::24`
+We can apply multiple pools or ranges by seperating them with commas.. i.e. `192.168.0.200/30,192.168.0.200/29` or `2001::12/127,2001::10/127` or `192.168.0.10-192.168.0.11,192.168.0.10-192.168.0.13` or `2001::10-2001::14,2001::20-2001::24` or `192.168.0.200/30,2001::10/127`
+
+## Dualstack Services
+
+Suppose a pool in the configmap is as follows: `range-default: 192.168.0.10-192.168.0.11,2001::10-2001::11`
+and there are no IPs currently in use.
+
+Then by creating a service with the following spec (with `IPv6` specified first in `ipFamilies`):
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-service
+  labels:
+    app.kubernetes.io/name: MyApp
+spec:
+  ipFamilyPolicy: PreferDualStack
+  ipFamilies:
+  - IPv6
+  - IPv4
+  selector:
+    app.kubernetes.io/name: MyApp
+  ports:
+    - protocol: TCP
+      port: 80
+```
+
+The service will receive the annotation `kube-vip.io/loadbalancerIPs:
+2001::10,192.168.0.10` following the intent to prefer IPv6. Conversely, if
+`IPv4` were specified first, then the IPv4 address will appear first in the
+annotation.
+
+With the `PreferDualStack` IP family policy, kube-vip-cloud-provider will make a
+best effort to provide at least one IP in `loadBalancerIPs` as long as any IP family
+in the pool has available addresses.
+
+If `RequireDualStack` is specified, then kube-vip-cloud-provider will fail to
+set the `kube-vip.io/loadbalancerIPs` annotation if it cannot find an available
+address in each of both IP families for the pool.
+
 
 ## Special DHCP CIDR
 

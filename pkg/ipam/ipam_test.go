@@ -201,6 +201,198 @@ func Test_buildHostsFromCidr(t *testing.T) {
 	}
 }
 
+func TestSplitCIDRsByIPFamily(t *testing.T) {
+	type args struct {
+		cidrs string
+	}
+	type output struct {
+		ipv4Cidrs string
+		ipv6Cidrs string
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    output
+		wantErr bool
+	}{
+		{
+			name: "single ipv4 cidr",
+			args: args{
+				"192.168.0.200/30",
+			},
+			want: output{
+				ipv4Cidrs: "192.168.0.200/30",
+				ipv6Cidrs: "",
+			},
+			wantErr: false,
+		},
+		{
+			name: "multiple ipv4 cidrs",
+			args: args{
+				"192.168.0.200/30,192.168.1.200/30",
+			},
+			want: output{
+				ipv4Cidrs: "192.168.0.200/30,192.168.1.200/30",
+				ipv6Cidrs: "",
+			},
+			wantErr: false,
+		},
+		{
+			name: "single ipv6 cidr",
+			args: args{
+				"fe80::10/127",
+			},
+			want: output{
+				ipv4Cidrs: "",
+				ipv6Cidrs: "fe80::10/127",
+			},
+			wantErr: false,
+		},
+		{
+			name: "multiple ipv6 cidrs",
+			args: args{
+				"fe80::10/127,fe80::fe/127",
+			},
+			want: output{
+				ipv4Cidrs: "",
+				ipv6Cidrs: "fe80::10/127,fe80::fe/127",
+			},
+			wantErr: false,
+		},
+		{
+			name: "one ipv4 cidr and one ipv6 cidr",
+			args: args{
+				"192.168.0.200/30,fe80::10/127",
+			},
+			want: output{
+				ipv4Cidrs: "192.168.0.200/30",
+				ipv6Cidrs: "fe80::10/127",
+			},
+			wantErr: false,
+		},
+		{
+			name: "multiple ipv4 cidrs and multiple ipv6 cidrs",
+			args: args{
+				"192.168.0.200/30,192.168.1.200/30,fe80::10/127,fe80::fe/127",
+			},
+			want: output{
+				ipv4Cidrs: "192.168.0.200/30,192.168.1.200/30",
+				ipv6Cidrs: "fe80::10/127,fe80::fe/127",
+			},
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ipv4Cidrs, ipv6Cidrs, err := SplitCIDRsByIPFamily(tt.args.cidrs)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("SplitCIDRsByIPFamily() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			if ipv4Cidrs != tt.want.ipv4Cidrs || ipv6Cidrs != tt.want.ipv6Cidrs {
+				t.Errorf("SplitCIDRsByIPFamily() = {ipv4Cidrs: %v, ipv6Cidrs: %v}, want %+v", ipv4Cidrs, ipv6Cidrs, tt.want)
+			}
+		})
+	}
+}
+
+func TestSplitRangesByIPFamily(t *testing.T) {
+	type args struct {
+		ipRangeString string
+	}
+	type output struct {
+		ipv4Ranges string
+		ipv6Ranges string
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    output
+		wantErr bool
+	}{
+		{
+			name: "single ipv4 range",
+			args: args{
+				"192.168.0.10-192.168.0.12",
+			},
+			want: output{
+				ipv4Ranges: "192.168.0.10-192.168.0.12",
+				ipv6Ranges: "",
+			},
+			wantErr: false,
+		},
+		{
+			name: "multiple ipv4 ranges",
+			args: args{
+				"192.168.0.10-192.168.0.12,192.168.0.100-192.168.0.120",
+			},
+			want: output{
+				ipv4Ranges: "192.168.0.10-192.168.0.12,192.168.0.100-192.168.0.120",
+				ipv6Ranges: "",
+			},
+			wantErr: false,
+		},
+		{
+			name: "single ipv6 range",
+			args: args{
+				"fe80::13-fe80::14",
+			},
+			want: output{
+				ipv4Ranges: "",
+				ipv6Ranges: "fe80::13-fe80::14",
+			},
+			wantErr: false,
+		},
+		{
+			name: "multiple ipv6 ranges",
+			args: args{
+				"fe80::13-fe80::14,fe80::130-fe80::140",
+			},
+			want: output{
+				ipv4Ranges: "",
+				ipv6Ranges: "fe80::13-fe80::14,fe80::130-fe80::140",
+			},
+			wantErr: false,
+		},
+		{
+			name: "one ipv4 range and one ipv6 range",
+			args: args{
+				"192.168.0.10-192.168.0.12,fe80::13-fe80::14",
+			},
+			want: output{
+				ipv4Ranges: "192.168.0.10-192.168.0.12",
+				ipv6Ranges: "fe80::13-fe80::14",
+			},
+			wantErr: false,
+		},
+		{
+			name: "multiple ipv4 ranges and multiple ipv6 ranges",
+			args: args{
+				"192.168.0.10-192.168.0.12,192.168.0.100-192.168.0.120,fe80::13-fe80::14,fe80::130-fe80::140",
+			},
+			want: output{
+				ipv4Ranges: "192.168.0.10-192.168.0.12,192.168.0.100-192.168.0.120",
+				ipv6Ranges: "fe80::13-fe80::14,fe80::130-fe80::140",
+			},
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ipv4Ranges, ipv6Ranges, err := SplitRangesByIPFamily(tt.args.ipRangeString)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("SplitRangesByIPFamily() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			if ipv4Ranges != tt.want.ipv4Ranges || ipv6Ranges != tt.want.ipv6Ranges {
+				t.Errorf("SplitRangesByIPFamily() = {ipv4Ranges: %v, ipv6Ranges: %v}, want %+v", ipv4Ranges, ipv6Ranges, tt.want)
+			}
+		})
+	}
+}
+
 func TestFindAvailableHostFromRange(t *testing.T) {
 	type args struct {
 		namespace        string
