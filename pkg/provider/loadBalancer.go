@@ -15,11 +15,17 @@ import (
 	"k8s.io/klog"
 )
 
-//kubevipLoadBalancerManager -
+// kubevipLoadBalancerManager -
 type kubevipLoadBalancerManager struct {
 	kubeClient     *kubernetes.Clientset
 	nameSpace      string
 	cloudConfigMap string
+}
+
+type VipDetail struct {
+	VsAddress    string `json:"vs_address,omitempty"`
+	ResourceName string `json:"resource_name,omitempty"`
+	ListenPort   string `json:"listen_port,omitempty"`
 }
 
 func newLoadBalancer(kubeClient *kubernetes.Clientset, ns, cm string) cloudprovider.LoadBalancer {
@@ -60,7 +66,7 @@ func getDefaultLoadBalancerName(service *v1.Service) string {
 	return cloudprovider.DefaultLoadBalancerName(service)
 }
 
-//nolint
+// nolint
 func (k *kubevipLoadBalancerManager) deleteLoadBalancer(ctx context.Context, service *v1.Service) error {
 	klog.Infof("deleting service '%s' (%s)", service.Name, service.UID)
 
@@ -115,16 +121,27 @@ func (k *kubevipLoadBalancerManager) syncLoadBalancer(ctx context.Context, servi
 		}
 	}
 
-	var existingServiceIPS []string
-	for x := range svcs.Items {
-		existingServiceIPS = append(existingServiceIPS, svcs.Items[x].Labels["ipam-address"])
-	}
+	/*check ports isconflict*/
+	var loadBalancerIP string = ""
+	var isDupAddress bool = false
 
-	// If the LoadBalancer address is empty, then do a local IPAM lookup
-	loadBalancerIP, err := discoverAddress(service.Namespace, pool, existingServiceIPS)
+	usedVip := getAllVsUsedVip(svcs)
+	usableVipList := getUsabletVip(usedVip, service.Spec.Ports)
 
-	if err != nil {
-		return nil, err
+	if len(usableVipList) > 0 {
+		loadBalancerIP = usableVipList[0]
+		isDupAddress = true
+	} else {
+		var existingServiceIPS []string
+		for x := range svcs.Items {
+			existingServiceIPS = append(existingServiceIPS, svcs.Items[x].Labels["ipam-address"])
+		}
+
+		// If the LoadBalancer address is empty, then do a local IPAM lookup
+		loadBalancerIP, err = discoverAddress(service.Namespace, pool, existingServiceIPS)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Update the services with this new address
@@ -146,6 +163,14 @@ func (k *kubevipLoadBalancerManager) syncLoadBalancer(ctx context.Context, servi
 
 		// Set IPAM address to Load Balancer Service
 		recentService.Spec.LoadBalancerIP = loadBalancerIP
+
+		if isDupAddress {
+			if recentService.Annotations == nil {
+				recentService.Annotations = make(map[string]string)
+			}
+			recentService.Annotations["kube-vip.io/ignore"] = "true"
+			recentService.Spec.ExternalIPs = append(recentService.Spec.ExternalIPs, loadBalancerIP)
+		}
 
 		// Update the actual service with the address and the labels
 		_, updateErr := k.kubeClient.CoreV1().Services(recentService.Namespace).Update(ctx, recentService, metav1.UpdateOptions{})
@@ -200,8 +225,11 @@ func discoverPool(cm *v1.ConfigMap, namespace, configMapName string) (pool strin
 }
 
 func discoverAddress(namespace, pool string, existingServiceIPS []string) (vip string, err error) {
-	// Check if ip pool contains a cidr, if not assume it is a range
-	if strings.Contains(pool, "/") {
+	// Check if DHCP is required
+	if pool == "0.0.0.0/32" {
+		vip = "0.0.0.0"
+		// Check if ip pool contains a cidr, if not assume it is a range
+	} else if strings.Contains(pool, "/") {
 		vip, err = ipam.FindAvailableHostFromCidr(namespace, pool, existingServiceIPS)
 		if err != nil {
 			return "", err
@@ -214,4 +242,132 @@ func discoverAddress(namespace, pool string, existingServiceIPS []string) (vip s
 	}
 
 	return vip, err
+}
+
+func getUsabletVip(usedVip []VipDetail, newPorts []v1.ServicePort) []string {
+
+	usableVip := make([]string, 0)
+
+	curPorts := getVsListenerPort(newPorts)
+
+	var checkUsedIpCache = make(map[string]bool)
+	for _, usedIpObj := range usedVip {
+
+		if comparePorts(curPorts, usedIpObj.ListenPort) {
+			newvip := usedIpObj.VsAddress
+			if checkUsedIpCache[newvip] {
+				usableVip = delUsableVip(usableVip, newvip)
+			}
+			checkUsedIpCache[newvip] = true
+			continue
+		} else {
+
+			newvip := usedIpObj.VsAddress
+			if !checkUsedIpCache[newvip] {
+				usableVip = append(usableVip, newvip)
+			}
+			checkUsedIpCache[newvip] = true
+		}
+	}
+	return usableVip
+}
+
+func delUsableVip(usableVip []string, raw string) []string {
+	var newUsableVip []string
+	for _, elem := range usableVip {
+		if elem != raw {
+			newUsableVip = append(newUsableVip, elem)
+		}
+	}
+	return newUsableVip
+}
+
+func getAllVsUsedVip(svclist *v1.ServiceList) []VipDetail {
+
+	var vipUsedList []VipDetail
+	var vip VipDetail
+
+	for _, vs := range svclist.Items {
+		objectMeta := metav1.ObjectMeta(vs.ObjectMeta)
+
+		if vs.Spec.Type == v1.ServiceTypeLoadBalancer && objectMeta.Labels["ipam-address"] != "" {
+			lbIngressIp := getLbIPFromStatus(&vs)
+			if len(lbIngressIp) >= 1 {
+				vip.VsAddress = lbIngressIp[0]
+			}
+			vip.ResourceName = fmt.Sprintf("%s_%s", vs.Name, vs.Namespace)
+			vip.ListenPort = getVsListenerPort(vs.Spec.Ports)
+			vipUsedList = append(vipUsedList, vip)
+		}
+	}
+
+	return vipUsedList
+}
+
+func getLbIPFromStatus(svc *v1.Service) []string {
+	vsStatus := svc.Status
+	ingressIps := make([]string, 0)
+
+	for _, ingress := range vsStatus.LoadBalancer.Ingress {
+		if ingress.IP != "" {
+			ingressIps = append(ingressIps, ingress.IP)
+		}
+	}
+
+	if len(svc.Spec.ExternalIPs) > 0 {
+		ingressIps = append(ingressIps, svc.Spec.ExternalIPs...)
+	}
+
+	return ingressIps
+}
+
+func getVsListenerPort(apiPorts []v1.ServicePort) string {
+	var portsListener string = ""
+
+	for _, port := range apiPorts {
+		switch port.Protocol {
+		case v1.ProtocolTCP:
+			if portsListener != "" {
+				portsListener += ","
+			}
+			portsListener += fmt.Sprintf("%d/%s", port.Port, port.Protocol)
+
+		case v1.ProtocolUDP:
+			if portsListener != "" {
+				portsListener += ","
+			}
+			portsListener += fmt.Sprintf("%d/%s", port.Port, port.Protocol)
+
+		case v1.ProtocolSCTP:
+			if portsListener != "" {
+				portsListener += ","
+			}
+			portsListener += fmt.Sprintf("%d/%s", port.Port, port.Protocol)
+
+		}
+
+	}
+	return portsListener
+}
+
+func comparePorts(srcPorts, dstPorts string) bool {
+	var src_ports = strings.Split(srcPorts, ",")
+	if len(src_ports) == 0 {
+		return false
+	}
+
+	var dst_ports = strings.Split(dstPorts, ",")
+	if len(dst_ports) == 0 {
+		return false
+	}
+
+	for _, src_port := range src_ports {
+		for _, dst_port := range dst_ports {
+			if src_port == dst_port {
+				return true
+			}
+		}
+	}
+
+	return false
 }
