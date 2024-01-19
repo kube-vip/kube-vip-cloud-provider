@@ -11,6 +11,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/klog"
 
 	cloudprovider "k8s.io/cloud-provider"
 )
@@ -21,9 +22,6 @@ var OutSideCluster bool
 const (
 	//ProviderName is the name of the cloud provider
 	ProviderName = "kubevip"
-
-	//KubeVipCloudConfig is the default name of the load balancer config Map
-	KubeVipCloudConfig = "kubevip"
 
 	//KubeVipClientConfig is the default name of the load balancer config Map
 	KubeVipClientConfig = "kubevip"
@@ -51,12 +49,14 @@ func newKubeVipCloudProvider(io.Reader) (cloudprovider.Interface, error) {
 	cm := os.Getenv("KUBEVIP_CONFIG_MAP")
 
 	if cm == "" {
-		cm = KubeVipCloudConfig
+		cm = KubeVipClientConfig
 	}
 
 	if ns == "" {
-		ns = "default"
+		ns = KubeVipClientConfigNamespace
 	}
+
+	klog.Infof("Watching configMap for pool config with name: '%s', namespace: '%s'", cm, ns)
 
 	var cl *kubernetes.Clientset
 	if !OutSideCluster {

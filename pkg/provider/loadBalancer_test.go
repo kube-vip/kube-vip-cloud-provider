@@ -864,7 +864,7 @@ func Test_syncLoadBalancer(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ns := KubeVipClientConfigNamespace
-			cm := KubeVipCloudConfig
+			cm := KubeVipClientConfig
 			if tt.poolConfigMap != nil {
 				ns = tt.poolConfigMap.GetObjectMeta().GetNamespace()
 				cm = tt.poolConfigMap.GetObjectMeta().GetName()
@@ -872,7 +872,7 @@ func Test_syncLoadBalancer(t *testing.T) {
 
 			mgr := &kubevipLoadBalancerManager{
 				kubeClient:     fake.NewSimpleClientset(),
-				nameSpace:      ns,
+				namespace:      ns,
 				cloudConfigMap: cm,
 			}
 
