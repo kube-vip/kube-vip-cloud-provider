@@ -61,7 +61,7 @@ spec:
       - command:
         - /kube-vip-cloud-provider
         - --leader-elect-resource-name=kube-vip-cloud-controller
-        image: ghcr.io/kube-vip/kube-vip-cloud-provider:v0.0.7
+        image: ghcr.io/kube-vip/kube-vip-cloud-provider:v0.0.9
         name: kube-vip-cloud-provider
         imagePullPolicy: Always
       dnsPolicy: ClusterFirst
