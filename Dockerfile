@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.4
 
-FROM golang:1.19 as builder
+FROM golang:1.21 as builder
 
 COPY . /src/
 WORKDIR /src
