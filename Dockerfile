@@ -11,7 +11,7 @@ RUN  --mount=type=cache,target=/root/.local/share/golang \
 
 ARG VERSION
 
-ENV LD_FLAGS="-s -w -extldflags -static -X k8s.io/component-base/version.gitVersion=$VERSION -s"
+ENV LD_FLAGS="-s -w -extldflags -static -X k8s.io/component-base/version.gitVersion=$VERSION"
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.local/share/golang \
