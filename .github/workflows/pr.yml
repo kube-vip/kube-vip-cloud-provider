@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v2
+      - uses: actions/setup-go@v5
         with:
           go-version: '1.21'
       - name: test
@@ -28,7 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v2
+      - uses: actions/setup-go@v5
         with:
           go-version: '1.21'
       - name: build
@@ -38,7 +38,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v2
+      - uses: actions/setup-go@v5
         with:
           go-version: '1.21'
       - name: image-amd64-build-only
