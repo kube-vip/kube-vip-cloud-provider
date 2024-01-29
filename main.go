@@ -26,6 +26,7 @@ import (
 	cloudprovider "k8s.io/cloud-provider"
 	"k8s.io/cloud-provider/app"
 	"k8s.io/cloud-provider/app/config"
+	"k8s.io/cloud-provider/names"
 	"k8s.io/cloud-provider/options"
 	cliflag "k8s.io/component-base/cli/flag"
 	"k8s.io/component-base/logs"
@@ -47,7 +48,7 @@ func main() {
 
 	fss := cliflag.NamedFlagSets{}
 
-	command := app.NewCloudControllerManagerCommand(opts, cloudInitializer, controllerInitializers(), fss, wait.NeverStop)
+	command := app.NewCloudControllerManagerCommand(opts, cloudInitializer, controllerInitializers(), names.CCMControllerAliases(), fss, wait.NeverStop)
 
 	command.Flags().BoolVar(&provider.OutSideCluster, "OutSideCluster", false, "Start Controller outside of cluster")
 
