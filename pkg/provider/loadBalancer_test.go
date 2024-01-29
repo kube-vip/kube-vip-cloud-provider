@@ -67,7 +67,7 @@ func Test_DiscoveryPoolCIDR(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotString, gotBool, err := discoverPool(&tt.args.data, tt.args.cidr, "")
+			gotString, gotBool, err := discoverPool(&tt.args.data, tt.args.cidr, "") // #nosec G601
 			if (err != nil) != tt.wantErr {
 				t.Errorf("discoverPool() error: %v, expected: %v", err, tt.wantErr)
 				return
@@ -134,7 +134,7 @@ func Test_DiscoveryPoolRange(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotString, gotBool, err := discoverPool(&tt.args.data, tt.args.ipRange, "")
+			gotString, gotBool, err := discoverPool(&tt.args.data, tt.args.ipRange, "") // #nosec G601
 			if (err != nil) != tt.wantErr {
 				t.Errorf("discoverPool() error: %v, expected: %v", err, tt.wantErr)
 				return
@@ -172,7 +172,7 @@ func Test_DiscoveryAddressCIDR(t *testing.T) {
 		{
 			name: "available ip search for unknown namespace",
 			args: args{
-				"unknwon",
+				"unknown",
 				"192.168.1.1/24",
 				[]string{"10.10.10.8", "172.16.0.3", "192.168.1.1", "10.10.10.9", "10.10.10.10", "172.16.0.4", "192.168.1.2", "10.10.10.12"},
 			},
@@ -192,7 +192,7 @@ func Test_DiscoveryAddressCIDR(t *testing.T) {
 		{
 			name: "ipv6, available ip search for unknown namespace",
 			args: args{
-				"unknwon",
+				"unknown",
 				"fe80::10/126",
 				[]string{"fe80::10", "fe80::11", "fe80::12"},
 			},
@@ -647,11 +647,9 @@ func Test_discoverVIPs(t *testing.T) {
 			}
 		})
 	}
-
 }
 
 func Test_syncLoadBalancer(t *testing.T) {
-
 	tests := []struct {
 		name             string
 		serviceNamespace string
@@ -877,7 +875,7 @@ func Test_syncLoadBalancer(t *testing.T) {
 			}
 
 			// create dummy service
-			_, err := mgr.kubeClient.CoreV1().Services("test").Create(context.Background(), &tt.originalService, metav1.CreateOptions{})
+			_, err := mgr.kubeClient.CoreV1().Services("test").Create(context.Background(), &tt.originalService, metav1.CreateOptions{}) // #nosec G601
 			if err != nil {
 				t.Error(err)
 			}
@@ -890,7 +888,7 @@ func Test_syncLoadBalancer(t *testing.T) {
 				}
 			}
 
-			_, err = mgr.syncLoadBalancer(context.Background(), &tt.originalService)
+			_, err = mgr.syncLoadBalancer(context.Background(), &tt.originalService) // #nosec G601
 			if err != nil {
 				t.Error(err)
 			}

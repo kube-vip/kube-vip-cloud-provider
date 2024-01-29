@@ -47,14 +47,14 @@ import (
 
 func (k *kubevipLoadBalancerManager) GetConfigMap(ctx context.Context, cm, nm string) (*v1.ConfigMap, error) {
 	// Attempt to retrieve the config map
-	return k.kubeClient.CoreV1().ConfigMaps(nm).Get(ctx, k.cloudConfigMap, metav1.GetOptions{})
+	return k.kubeClient.CoreV1().ConfigMaps(nm).Get(ctx, cm, metav1.GetOptions{})
 }
 
 func (k *kubevipLoadBalancerManager) CreateConfigMap(ctx context.Context, cm, nm string) (*v1.ConfigMap, error) {
 	// Create new configuration map in the correct namespace
 	newConfigMap := v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      k.cloudConfigMap,
+			Name:      cm,
 			Namespace: nm,
 		},
 	}

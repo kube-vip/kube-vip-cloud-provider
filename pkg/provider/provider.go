@@ -3,9 +3,8 @@ package provider
 import (
 	"fmt"
 	"io"
-	"path/filepath"
-
 	"os"
+	"path/filepath"
 
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
@@ -20,16 +19,16 @@ import (
 var OutSideCluster bool
 
 const (
-	//ProviderName is the name of the cloud provider
+	// ProviderName is the name of the cloud provider
 	ProviderName = "kubevip"
 
-	//KubeVipClientConfig is the default name of the load balancer config Map
+	// KubeVipClientConfig is the default name of the load balancer config Map
 	KubeVipClientConfig = "kubevip"
 
-	//KubeVipClientConfig is the default namespace of the load balancer config Map
+	// KubeVipClientConfig is the default namespace of the load balancer config Map
 	KubeVipClientConfigNamespace = "kube-system"
 
-	//KubeVipServicesKey is the key in the ConfigMap that has the services configuration
+	// KubeVipServicesKey is the key in the ConfigMap that has the services configuration
 	KubeVipServicesKey = "kubevip-services"
 )
 
@@ -88,16 +87,16 @@ func newKubeVipCloudProvider(io.Reader) (cloudprovider.Interface, error) {
 }
 
 // Initialize - starts the clound-provider controller
-func (p *KubeVipCloudProvider) Initialize(clientBuilder cloudprovider.ControllerClientBuilder, stop <-chan struct{}) {
+func (p *KubeVipCloudProvider) Initialize(clientBuilder cloudprovider.ControllerClientBuilder, _ <-chan struct{}) {
 	clientset := clientBuilder.ClientOrDie("do-shared-informers")
 	sharedInformer := informers.NewSharedInformerFactory(clientset, 0)
 
-	//res := NewResourcesController(c.resources, sharedInformer.Core().V1().Services(), clientset)
+	// res := NewResourcesController(c.resources, sharedInformer.Core().V1().Services(), clientset)
 
 	sharedInformer.Start(nil)
 	sharedInformer.WaitForCacheSync(nil)
-	//go res.Run(stop)
-	//go c.serveDebug(stop)
+	// go res.Run(stop)
+	// go c.serveDebug(stop)
 }
 
 // LoadBalancer returns a loadbalancer interface. Also returns true if the interface is supported, false otherwise.

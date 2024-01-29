@@ -18,9 +18,7 @@ package main
 
 import (
 	"fmt"
-	"math/rand"
 	"os"
-	"time"
 
 	"github.com/kube-vip/kube-vip-cloud-provider/pkg/provider"
 	"github.com/spf13/pflag"
@@ -37,7 +35,7 @@ import (
 )
 
 func main() {
-	rand.Seed(time.Now().UnixNano())
+	// a random number generator will be seeded automatically
 
 	logs.InitLogs()
 	defer logs.FlushLogs()
