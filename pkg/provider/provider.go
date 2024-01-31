@@ -88,6 +88,8 @@ func newKubeVipCloudProvider(io.Reader) (cloudprovider.Interface, error) {
 
 // Initialize - starts the clound-provider controller
 func (p *KubeVipCloudProvider) Initialize(clientBuilder cloudprovider.ControllerClientBuilder, _ <-chan struct{}) {
+	klog.V(0).Info("Initing Kube-vip Cloud Provider")
+
 	clientset := clientBuilder.ClientOrDie("do-shared-informers")
 	sharedInformer := informers.NewSharedInformerFactory(clientset, 0)
 
