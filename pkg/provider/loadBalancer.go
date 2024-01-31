@@ -44,11 +44,11 @@ func newLoadBalancer(kubeClient kubernetes.Interface, ns, cm string) cloudprovid
 }
 
 func (k *kubevipLoadBalancerManager) EnsureLoadBalancer(ctx context.Context, _ string, service *v1.Service, _ []*v1.Node) (lbs *v1.LoadBalancerStatus, err error) {
-	return k.syncLoadBalancer(ctx, service)
+	return syncLoadBalancer(ctx, k.kubeClient, service, k.cloudConfigMap, k.namespace)
 }
 
 func (k *kubevipLoadBalancerManager) UpdateLoadBalancer(ctx context.Context, _ string, service *v1.Service, _ []*v1.Node) (err error) {
-	_, err = k.syncLoadBalancer(ctx, service)
+	_, err = syncLoadBalancer(ctx, k.kubeClient, service, k.cloudConfigMap, k.namespace)
 	return err
 }
 
@@ -87,7 +87,7 @@ func (k *kubevipLoadBalancerManager) deleteLoadBalancer(ctx context.Context, ser
 // 2b. Get the network configuration for this service (namespace) / (CIDR/Range)
 // 2c. Between the two find a free address
 
-func (k *kubevipLoadBalancerManager) syncLoadBalancer(ctx context.Context, service *v1.Service) (*v1.LoadBalancerStatus, error) {
+func syncLoadBalancer(ctx context.Context, kubeClient kubernetes.Interface, service *v1.Service, cmName, cmNamespace string) (*v1.LoadBalancerStatus, error) {
 	// This function reconciles the load balancer state
 	klog.Infof("syncing service '%s' (%s)", service.Name, service.UID)
 
@@ -97,7 +97,7 @@ func (k *kubevipLoadBalancerManager) syncLoadBalancer(ctx context.Context, servi
 			klog.Warningf("service.Spec.LoadBalancerIP is defined but annotations '%s' is not, assume it's a legacy service, updates its annotations", loadbalancerIPsAnnotations)
 			// assume it's legacy service, need to update the annotation.
 			err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-				recentService, getErr := k.kubeClient.CoreV1().Services(service.Namespace).Get(ctx, service.Name, metav1.GetOptions{})
+				recentService, getErr := kubeClient.CoreV1().Services(service.Namespace).Get(ctx, service.Name, metav1.GetOptions{})
 				if getErr != nil {
 					return getErr
 				}
@@ -109,7 +109,7 @@ func (k *kubevipLoadBalancerManager) syncLoadBalancer(ctx context.Context, servi
 				delete(recentService.Labels, legacyIpamAddressLabelKey)
 
 				// Update the actual service with the annotations
-				_, updateErr := k.kubeClient.CoreV1().Services(recentService.Namespace).Update(ctx, recentService, metav1.UpdateOptions{})
+				_, updateErr := kubeClient.CoreV1().Services(recentService.Namespace).Update(ctx, recentService, metav1.UpdateOptions{})
 				return updateErr
 			})
 			if err != nil {
@@ -125,7 +125,7 @@ func (k *kubevipLoadBalancerManager) syncLoadBalancer(ctx context.Context, servi
 		if service.Labels == nil || service.Labels[implementationLabelKey] != implementationLabelValue {
 			klog.Infof("service '%s/%s' created with pre-defined ip '%s'", service.Namespace, service.Name, v)
 			err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-				recentService, getErr := k.kubeClient.CoreV1().Services(service.Namespace).Get(ctx, service.Name, metav1.GetOptions{})
+				recentService, getErr := kubeClient.CoreV1().Services(service.Namespace).Get(ctx, service.Name, metav1.GetOptions{})
 				if getErr != nil {
 					return getErr
 				}
@@ -135,7 +135,7 @@ func (k *kubevipLoadBalancerManager) syncLoadBalancer(ctx context.Context, servi
 				}
 				recentService.Labels[implementationLabelKey] = implementationLabelValue
 				// Update the actual service with the annotations
-				_, updateErr := k.kubeClient.CoreV1().Services(recentService.Namespace).Update(ctx, recentService, metav1.UpdateOptions{})
+				_, updateErr := kubeClient.CoreV1().Services(recentService.Namespace).Update(ctx, recentService, metav1.UpdateOptions{})
 				return updateErr
 			})
 			if err != nil {
@@ -146,18 +146,18 @@ func (k *kubevipLoadBalancerManager) syncLoadBalancer(ctx context.Context, servi
 	}
 
 	// Get the clound controller configuration map
-	controllerCM, err := k.GetConfigMap(ctx, k.cloudConfigMap, k.namespace)
+	controllerCM, err := getConfigMap(ctx, kubeClient, cmName, cmNamespace)
 	if err != nil {
-		klog.Errorf("Unable to retrieve kube-vip ipam config from configMap [%s] in %s", k.cloudConfigMap, k.namespace)
+		klog.Errorf("Unable to retrieve kube-vip ipam config from configMap [%s] in %s", cmName, cmNamespace)
 		// TODO - determine best course of action, create one if it doesn't exist
-		controllerCM, err = k.CreateConfigMap(ctx, k.cloudConfigMap, k.namespace)
+		controllerCM, err = createConfigMap(ctx, kubeClient, cmName, cmNamespace)
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	// Get ip pool from configmap and determine if it is namespace specific or global
-	pool, global, err := discoverPool(controllerCM, service.Namespace, k.cloudConfigMap)
+	pool, global, err := discoverPool(controllerCM, service.Namespace, cmName)
 	if err != nil {
 		return nil, err
 	}
@@ -165,12 +165,12 @@ func (k *kubevipLoadBalancerManager) syncLoadBalancer(ctx context.Context, servi
 	// Get all services in this namespace or globally, that have the correct label
 	var svcs *v1.ServiceList
 	if global {
-		svcs, err = k.kubeClient.CoreV1().Services("").List(ctx, metav1.ListOptions{LabelSelector: getKubevipImplementationLabel()})
+		svcs, err = kubeClient.CoreV1().Services("").List(ctx, metav1.ListOptions{LabelSelector: getKubevipImplementationLabel()})
 		if err != nil {
 			return &service.Status.LoadBalancer, err
 		}
 	} else {
-		svcs, err = k.kubeClient.CoreV1().Services(service.Namespace).List(ctx, metav1.ListOptions{LabelSelector: getKubevipImplementationLabel()})
+		svcs, err = kubeClient.CoreV1().Services(service.Namespace).List(ctx, metav1.ListOptions{LabelSelector: getKubevipImplementationLabel()})
 		if err != nil {
 			return &service.Status.LoadBalancer, err
 		}
@@ -201,7 +201,7 @@ func (k *kubevipLoadBalancerManager) syncLoadBalancer(ctx context.Context, servi
 
 	// Update the services with this new address
 	retryErr := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		recentService, getErr := k.kubeClient.CoreV1().Services(service.Namespace).Get(ctx, service.Name, metav1.GetOptions{})
+		recentService, getErr := kubeClient.CoreV1().Services(service.Namespace).Get(ctx, service.Name, metav1.GetOptions{})
 		if getErr != nil {
 			return getErr
 		}
@@ -226,7 +226,7 @@ func (k *kubevipLoadBalancerManager) syncLoadBalancer(ctx context.Context, servi
 		recentService.Spec.LoadBalancerIP = strings.Split(loadBalancerIPs, ",")[0]
 
 		// Update the actual service with the address and the labels
-		_, updateErr := k.kubeClient.CoreV1().Services(recentService.Namespace).Update(ctx, recentService, metav1.UpdateOptions{})
+		_, updateErr := kubeClient.CoreV1().Services(recentService.Namespace).Update(ctx, recentService, metav1.UpdateOptions{})
 		return updateErr
 	})
 	if retryErr != nil {

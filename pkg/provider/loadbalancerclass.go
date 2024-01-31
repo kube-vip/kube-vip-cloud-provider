@@ -1,13 +1,16 @@
-package controller
+package provider
 
 import (
+	"context"
 	"fmt"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/informers"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	corelisters "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
@@ -20,38 +23,48 @@ const (
 	controllerName = "service-with-loadbalancerclass-controller"
 )
 
-type Controller struct {
+type loadbalancerClassServiceController struct {
+	kubeClient          kubernetes.Interface
 	serviceInformer     cache.SharedIndexInformer
 	serviceLister       corelisters.ServiceLister
 	serviceListerSynced cache.InformerSynced
 
 	recorder  record.EventRecorder
 	workqueue workqueue.RateLimitingInterface
+
+	cmName      string
+	cmNamespace string
 }
 
-func NewController(
+func newLoadbalancerClassServiceController(
 	sharedInformer informers.SharedInformerFactory,
-) *Controller {
+	kubeClient kubernetes.Interface,
+	cmName, cmNamespace string,
+) *loadbalancerClassServiceController {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(klog.Infof)
 	recorder := eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: controllerName})
 	serviceInformer := sharedInformer.Core().V1().Services().Informer()
-	c := &Controller{
+	c := &loadbalancerClassServiceController{
 		serviceInformer:     serviceInformer,
 		serviceLister:       sharedInformer.Core().V1().Services().Lister(),
 		serviceListerSynced: serviceInformer.HasSynced,
+		kubeClient:          kubeClient,
 
 		recorder:  recorder,
 		workqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "Nodes"),
+
+		cmName:      cmName,
+		cmNamespace: cmNamespace,
 	}
 
-	serviceInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+	_, _ = serviceInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(cur interface{}) {
-			node := cur.(*corev1.Node).DeepCopy()
-			c.enqueueService(node)
+			s := cur.(*corev1.Node).DeepCopy()
+			c.enqueueService(s)
 		},
 		UpdateFunc: func(old interface{}, new interface{}) {
-			c.enqueueService(old)
+			c.enqueueService(new)
 		},
 		// DeleteFunc: ,
 	})
@@ -59,7 +72,7 @@ func NewController(
 	return c
 }
 
-func (c *Controller) enqueueService(obj interface{}) {
+func (c *loadbalancerClassServiceController) enqueueService(obj interface{}) {
 	var key string
 	var err error
 	if key, err = cache.MetaNamespaceKeyFunc(obj); err != nil {
@@ -70,17 +83,17 @@ func (c *Controller) enqueueService(obj interface{}) {
 }
 
 // Run starts the worker to process node updates
-func (c *Controller) Run(stopCh <-chan struct{}) {
+func (c *loadbalancerClassServiceController) Run(stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer c.workqueue.ShutDown()
 
 	klog.V(4).Info("Waiting cache to be synced.")
 
-	if !cache.WaitForNamedCacheSync("node", stopCh, c.serviceListerSynced) {
+	if !cache.WaitForNamedCacheSync("service", stopCh, c.serviceListerSynced) {
 		return
 	}
 
-	klog.V(4).Info("Starting node workers.")
+	klog.V(4).Info("Starting service workers for loadbalancerclass.")
 	go wait.Until(c.runWorker, time.Second, stopCh)
 
 	<-stopCh
@@ -89,14 +102,14 @@ func (c *Controller) Run(stopCh <-chan struct{}) {
 // runWorker is a long-running function that will continually call the
 // processNextWorkItem function in order to read and process a message on the
 // workqueue.
-func (c *Controller) runWorker() {
+func (c *loadbalancerClassServiceController) runWorker() {
 	for c.processNextWorkItem() {
 	}
 }
 
 // processNextWorkItem will read a single work item off the workqueue and
 // attempt to process it, by calling the syncHandler.
-func (c *Controller) processNextWorkItem() bool {
+func (c *loadbalancerClassServiceController) processNextWorkItem() bool {
 	obj, shutdown := c.workqueue.Get()
 	if shutdown {
 		return false
@@ -138,7 +151,7 @@ func (c *Controller) processNextWorkItem() bool {
 // syncService will sync the Service with the given key if it has had its expectations fulfilled,
 // meaning it did not expect to see any more of its pods created or deleted. This function is not meant to be
 // invoked concurrently with the same key.
-func (c *Controller) syncService(key string) error {
+func (c *loadbalancerClassServiceController) syncService(key string) error {
 	startTime := time.Now()
 	defer func() {
 		klog.V(4).Infof("Finished syncing service %q (%v)", key, time.Since(startTime))
@@ -154,6 +167,8 @@ func (c *Controller) syncService(key string) error {
 	switch {
 	case err != nil:
 		utilruntime.HandleError(fmt.Errorf("unable to retrieve service %v from store: %v", key, err))
+	case loadbalancerClassMatch(svc):
+		klog.V(4).Infof("Skip reoconciling service %s/%s, since loadbalancerClass doesn't match", svc.Namespace, svc.Name)
 	default:
 		err = c.processServiceCreateOrUpdate(svc)
 	}
@@ -161,8 +176,13 @@ func (c *Controller) syncService(key string) error {
 	return err
 }
 
-func (c *Controller) processServiceCreateOrUpdate(svc *corev1.Service) error {
+func (c *loadbalancerClassServiceController) processServiceCreateOrUpdate(svc *corev1.Service) error {
 	// ctx := context.Background()
+	_, err := syncLoadBalancer(context.Background(), c.kubeClient, svc, c.cmName, c.cmNamespace)
+	c.recorder.Eventf(svc, v1.EventTypeWarning, "syncLoadBalancer", "Error syncing load balancer: %v", err)
+	return err
+}
 
-	return nil
+func loadbalancerClassMatch(svc *corev1.Service) bool {
+	return svc != nil && svc.Spec.LoadBalancerClass != nil && *svc.Spec.LoadBalancerClass == LoadbalancerClass
 }
