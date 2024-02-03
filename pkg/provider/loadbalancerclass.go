@@ -6,7 +6,6 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
-	v1 "k8s.io/api/core/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/informers"
@@ -168,9 +167,10 @@ func (c *loadbalancerClassServiceController) syncService(key string) error {
 	case err != nil:
 		utilruntime.HandleError(fmt.Errorf("unable to retrieve service %v from store: %v", key, err))
 	case loadbalancerClassMatch(svc):
-		klog.V(4).Infof("Skip reoconciling service %s/%s, since loadbalancerClass doesn't match", svc.Namespace, svc.Name)
-	default:
+		klog.V(4).Infof("Reconcile service %s/%s, since loadbalancerClass match", svc.Namespace, svc.Name)
 		err = c.processServiceCreateOrUpdate(svc)
+	default:
+		klog.V(4).Infof("Skip reoconciling service %s/%s, since loadbalancerClass doesn't match", svc.Namespace, svc.Name)
 	}
 
 	return err
@@ -179,7 +179,7 @@ func (c *loadbalancerClassServiceController) syncService(key string) error {
 func (c *loadbalancerClassServiceController) processServiceCreateOrUpdate(svc *corev1.Service) error {
 	// ctx := context.Background()
 	_, err := syncLoadBalancer(context.Background(), c.kubeClient, svc, c.cmName, c.cmNamespace)
-	c.recorder.Eventf(svc, v1.EventTypeWarning, "syncLoadBalancer", "Error syncing load balancer: %v", err)
+	c.recorder.Eventf(svc, corev1.EventTypeWarning, "syncLoadBalancer", "Error syncing load balancer: %v", err)
 	return err
 }
 
