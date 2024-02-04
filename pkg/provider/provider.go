@@ -69,10 +69,19 @@ func newKubeVipCloudProvider(io.Reader) (cloudprovider.Interface, error) {
 		ns = KubeVipClientConfigNamespace
 	}
 
-	enableLBClass, err := strconv.ParseBool(lbc)
-	if err != nil {
-		return nil, fmt.Errorf("error creating kubernetes client config: %s", err.Error())
+	var (
+		enableLBClass bool
+		err           error
+	)
+
+	if len(lbc) > 0 {
+		klog.Infof("Checking if loadbalancerClass is enabled: %s", lbc)
+		enableLBClass, err = strconv.ParseBool(lbc)
+		if err != nil {
+			return nil, fmt.Errorf("error parsing value of %s: %s", EnableLoadbalancerClassEnvKey, err.Error())
+		}
 	}
+	klog.Infof("staring with loadbalancerClass set to: %t", enableLBClass)
 
 	klog.Infof("Watching configMap for pool config with name: '%s', namespace: '%s'", cm, ns)
 
@@ -117,7 +126,8 @@ func (p *KubeVipCloudProvider) Initialize(clientBuilder cloudprovider.Controller
 	sharedInformer := informers.NewSharedInformerFactory(clientset, 0)
 
 	if p.enableLBClass {
-		klog.V(0).Info("staring controllers to enable service controller that only monitors service with loadbalancerClass")
+		klog.V(0).Info("staring a seperate service controller that only monitors service with loadbalancerClass")
+		klog.V(0).Info("default cloud-provider service controller will ignore service with loadbalancerClass")
 		controller := newLoadbalancerClassServiceController(sharedInformer, p.kubeClient, p.configMapName, p.namespace)
 		go controller.Run(context.Background().Done())
 	}
