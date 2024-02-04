@@ -154,7 +154,7 @@ func newFakeServiceLister(err error, svcs ...*corev1.Service) *fakeServiceLister
 
 // List lists all Services in the indexer.
 // Objects returned here must be treated as read-only.
-func (l *fakeServiceLister) List(selector labels.Selector) (ret []*corev1.Service, err error) {
+func (l *fakeServiceLister) List(_ labels.Selector) (ret []*corev1.Service, err error) {
 	return l.cache, l.err
 }
 
@@ -179,7 +179,7 @@ type fakeServiceNamespaceLister struct {
 
 // List lists all Services in the indexer.
 // Objects returned here must be treated as read-only.
-func (l fakeServiceNamespaceLister) List(selector labels.Selector) (ret []*corev1.Service, err error) {
+func (l fakeServiceNamespaceLister) List(_ labels.Selector) (ret []*corev1.Service, err error) {
 	return l.cache, l.err
 }
 

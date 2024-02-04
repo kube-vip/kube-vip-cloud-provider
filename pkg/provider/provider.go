@@ -126,7 +126,7 @@ func (p *KubeVipCloudProvider) Initialize(clientBuilder cloudprovider.Controller
 	sharedInformer := informers.NewSharedInformerFactory(clientset, 0)
 
 	if p.enableLBClass {
-		klog.V(0).Info("staring a seperate service controller that only monitors service with loadbalancerClass")
+		klog.V(0).Info("staring a separate service controller that only monitors service with loadbalancerClass")
 		klog.V(0).Info("default cloud-provider service controller will ignore service with loadbalancerClass")
 		controller := newLoadbalancerClassServiceController(sharedInformer, p.kubeClient, p.configMapName, p.namespace)
 		go controller.Run(context.Background().Done())
