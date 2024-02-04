@@ -15,6 +15,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
+	servicehelper "k8s.io/cloud-provider/service/helpers"
 	"k8s.io/klog"
 )
 
@@ -51,7 +52,7 @@ func newLoadbalancerClassServiceController(
 		kubeClient:          kubeClient,
 
 		recorder:  recorder,
-		workqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "Nodes"),
+		workqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "Services"),
 
 		cmName:      cmName,
 		cmNamespace: cmNamespace,
@@ -59,13 +60,14 @@ func newLoadbalancerClassServiceController(
 
 	_, _ = serviceInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(cur interface{}) {
-			s := cur.(*corev1.Node).DeepCopy()
+			s := cur.(*corev1.Service).DeepCopy()
 			c.enqueueService(s)
 		},
 		UpdateFunc: func(old interface{}, new interface{}) {
-			c.enqueueService(new)
+			s := new.(*corev1.Service).DeepCopy()
+			c.enqueueService(s)
 		},
-		// DeleteFunc: ,
+		// Delete is handled in the UpdateFunc
 	})
 
 	return c
@@ -81,7 +83,7 @@ func (c *loadbalancerClassServiceController) enqueueService(obj interface{}) {
 	c.workqueue.Add(key)
 }
 
-// Run starts the worker to process node updates
+// Run starts the worker to process service updates
 func (c *loadbalancerClassServiceController) Run(stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer c.workqueue.ShutDown()
@@ -151,11 +153,6 @@ func (c *loadbalancerClassServiceController) processNextWorkItem() bool {
 // meaning it did not expect to see any more of its pods created or deleted. This function is not meant to be
 // invoked concurrently with the same key.
 func (c *loadbalancerClassServiceController) syncService(key string) error {
-	startTime := time.Now()
-	defer func() {
-		klog.V(4).Infof("Finished syncing service %q (%v)", key, time.Since(startTime))
-	}()
-
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
 		return err
@@ -166,23 +163,96 @@ func (c *loadbalancerClassServiceController) syncService(key string) error {
 	switch {
 	case err != nil:
 		utilruntime.HandleError(fmt.Errorf("unable to retrieve service %v from store: %v", key, err))
-	case loadbalancerClassMatch(svc):
-		klog.V(4).Infof("Reconcile service %s/%s, since loadbalancerClass match", svc.Namespace, svc.Name)
-		err = c.processServiceCreateOrUpdate(svc)
+		return err
+	case isLoadbalancerService(svc) && loadbalancerClassMatch(svc):
+		klog.Infof("Reconcile service %s/%s, since loadbalancerClass match", svc.Namespace, svc.Name)
+		if err = c.processServiceCreateOrUpdate(svc); err != nil {
+			return err
+		}
+	case isLoadbalancerService(svc):
+		klog.Infof("Skip reconciling service %s/%s, since loadbalancerClass doesn't match", svc.Namespace, svc.Name)
 	default:
-		klog.V(4).Infof("Skip reoconciling service %s/%s, since loadbalancerClass doesn't match", svc.Namespace, svc.Name)
+		// skip if it's not service type lb
 	}
 
-	return err
+	return nil
 }
 
 func (c *loadbalancerClassServiceController) processServiceCreateOrUpdate(svc *corev1.Service) error {
-	// ctx := context.Background()
+	startTime := time.Now()
+	defer func() {
+		klog.Infof("Finished processing service %s/%s (%v)", svc.Namespace, svc.Name, time.Since(startTime))
+	}()
+	// if it's getting deleted, remove the finalizer
+	if !svc.DeletionTimestamp.IsZero() {
+		if err := c.removeFinalizer(svc); err != nil {
+			klog.Infof("Error removing finalizer from service %s/%s", svc.Namespace, svc.Name)
+			return err
+		}
+		c.recorder.Eventf(svc, corev1.EventTypeWarning, "LoadBalancerDeleted", "loadbalancer is deleted")
+		return nil
+	}
+
+	if err := c.addFinalizer(svc); err != nil {
+		klog.Infof("Error adding finalizer to service %s/%s", svc.Namespace, svc.Name)
+		return err
+	}
+
 	_, err := syncLoadBalancer(context.Background(), c.kubeClient, svc, c.cmName, c.cmNamespace)
-	c.recorder.Eventf(svc, corev1.EventTypeWarning, "syncLoadBalancer", "Error syncing load balancer: %v", err)
+	if err != nil {
+		c.recorder.Eventf(svc, corev1.EventTypeWarning, "syncLoadBalancer", "Error syncing load balancer: %v", err)
+		return err
+	}
+
+	return nil
+}
+
+// addFinalizer patches the service to add finalizer.
+func (c *loadbalancerClassServiceController) addFinalizer(service *corev1.Service) error {
+	if servicehelper.HasLBFinalizer(service) {
+		return nil
+	}
+
+	// Make a copy so we don't mutate the shared informer cache.
+	updated := service.DeepCopy()
+	updated.ObjectMeta.Finalizers = append(updated.ObjectMeta.Finalizers, servicehelper.LoadBalancerCleanupFinalizer)
+
+	klog.Infof("Adding finalizer to service %s/%s", updated.Namespace, updated.Name)
+	_, err := servicehelper.PatchService(c.kubeClient.CoreV1(), service, updated)
+	return err
+}
+
+// removeFinalizer patches the service to remove finalizer.
+func (c *loadbalancerClassServiceController) removeFinalizer(service *corev1.Service) error {
+	if !servicehelper.HasLBFinalizer(service) {
+		return nil
+	}
+
+	// Make a copy so we don't mutate the shared informer cache.
+	updated := service.DeepCopy()
+	updated.ObjectMeta.Finalizers = removeString(updated.ObjectMeta.Finalizers, servicehelper.LoadBalancerCleanupFinalizer)
+
+	klog.Infof("Removing finalizer from service %s/%s", updated.Namespace, updated.Name)
+	_, err := servicehelper.PatchService(c.kubeClient.CoreV1(), service, updated)
 	return err
 }
 
 func loadbalancerClassMatch(svc *corev1.Service) bool {
 	return svc != nil && svc.Spec.LoadBalancerClass != nil && *svc.Spec.LoadBalancerClass == LoadbalancerClass
+}
+
+func isLoadbalancerService(svc *corev1.Service) bool {
+	return svc != nil && svc.Spec.Type == corev1.ServiceTypeLoadBalancer
+}
+
+// removeString returns a newly created []string that contains all items from slice that
+// are not equal to s.
+func removeString(slice []string, s string) []string {
+	var newSlice []string
+	for _, item := range slice {
+		if item != s {
+			newSlice = append(newSlice, item)
+		}
+	}
+	return newSlice
 }

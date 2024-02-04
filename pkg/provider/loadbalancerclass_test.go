@@ -63,13 +63,19 @@ func TestProcessServiceCreateOrUpdate(t *testing.T) {
 	}{
 		{
 			desc:               "create service with correct lbclass, reconcile",
-			svcs:               []*corev1.Service{service("t1s1", ptr.To(LoadbalancerClass)), service("t1s2", ptr.To(LoadbalancerClass))},
+			svcs:               []*corev1.Service{newService("t1s1", ptr.To(LoadbalancerClass), true), newService("t1s2", ptr.To(LoadbalancerClass), true)},
 			expectedNumPatches: 2,
 			expectIPAllocated:  true,
 		},
 		{
 			desc:               "create service with incorrect lbclass, skip reconciling",
-			svcs:               []*corev1.Service{service("t2s1", ptr.To("wrong")), service("t2s2", ptr.To("wrong"))},
+			svcs:               []*corev1.Service{newService("t2s1", ptr.To("wrong"), true), newService("t2s2", ptr.To("wrong"), true)},
+			expectedNumPatches: 0,
+			expectIPAllocated:  true,
+		},
+		{
+			desc:               "create service with different type, skip reconciling",
+			svcs:               []*corev1.Service{newService("t3s1", nil, false)},
 			expectedNumPatches: 0,
 			expectIPAllocated:  true,
 		},
@@ -78,7 +84,7 @@ func TestProcessServiceCreateOrUpdate(t *testing.T) {
 	// create ip pool for service to use
 	client := fake.NewSimpleClientset()
 	ctx := context.Background()
-	cm := poolConfigMap()
+	cm := newIPPoolConfigMap()
 	if _, err := client.CoreV1().ConfigMaps(cm.Namespace).Create(ctx, cm, metav1.CreateOptions{}); err != nil {
 		t.Errorf("Failed to prepare configmap %s for testing: %v", cm.Name, err)
 	}
@@ -117,18 +123,23 @@ func TestProcessServiceCreateOrUpdate(t *testing.T) {
 	}
 }
 
-func service(name string, lbc *string) *corev1.Service {
-	return &corev1.Service{
+func newService(name string, lbc *string, lbtype bool) *corev1.Service {
+	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name,
 		},
 		Spec: corev1.ServiceSpec{
 			LoadBalancerClass: lbc,
+			Type:              corev1.ServiceTypeLoadBalancer,
 		},
 	}
+	if !lbtype {
+		svc.Spec.Type = corev1.ServiceTypeClusterIP
+	}
+	return svc
 }
 
-func poolConfigMap() *corev1.ConfigMap {
+func newIPPoolConfigMap() *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      KubeVipClientConfig,
