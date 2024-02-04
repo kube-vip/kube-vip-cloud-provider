@@ -87,7 +87,7 @@ func main() {
 // only enable service controller
 func controllerInitializers() map[string]app.ControllerInitFuncConstructor {
 	return map[string]app.ControllerInitFuncConstructor{
-		"service": app.DefaultInitFuncConstructors["service"],
+		names.ServiceLBController: app.DefaultInitFuncConstructors[names.ServiceLBController],
 	}
 }
 
