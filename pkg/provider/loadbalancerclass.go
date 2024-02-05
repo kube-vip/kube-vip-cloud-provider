@@ -3,9 +3,11 @@ package provider
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/informers"
@@ -20,9 +22,12 @@ import (
 )
 
 const (
-	controllerName = "service-with-loadbalancerclass-controller"
+	controllerName = "service-lbc-controller"
 )
 
+// loadbalancerClassServiceController starts a controller that reconcile type loadbalancer service with
+// loadbalancerclass set to kube-vip.io/kube-vip-class.
+// no need to add node controller since kube-vip-cp itself doesn't use node info to update loadbalancer
 type loadbalancerClassServiceController struct {
 	kubeClient          kubernetes.Interface
 	serviceInformer     cache.SharedIndexInformer
@@ -60,12 +65,16 @@ func newLoadbalancerClassServiceController(
 
 	_, _ = serviceInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(cur interface{}) {
-			s := cur.(*corev1.Service).DeepCopy()
-			c.enqueueService(s)
+			if svc, ok := cur.(*corev1.Service); ok && wantsLoadBalancer(svc) {
+				c.enqueueService(svc)
+			}
 		},
-		UpdateFunc: func(old interface{}, new interface{}) {
-			s := new.(*corev1.Service).DeepCopy()
-			c.enqueueService(s)
+		UpdateFunc: func(old interface{}, cur interface{}) {
+			oldSvc, ok1 := old.(*corev1.Service)
+			curSvc, ok2 := cur.(*corev1.Service)
+			if ok1 && ok2 && wantsLoadBalancer(curSvc) && (c.needsUpdate(oldSvc, curSvc) || needsCleanup(curSvc)) {
+				c.enqueueService(curSvc)
+			}
 		},
 		// Delete is handled in the UpdateFunc
 	})
@@ -161,18 +170,17 @@ func (c *loadbalancerClassServiceController) syncService(key string) error {
 	svc, err := c.serviceLister.Services(namespace).Get(name)
 
 	switch {
+	case apierrors.IsNotFound(err):
+		// service absence in store means watcher caught the deletion, ensure LB info is cleaned
+		return nil
 	case err != nil:
 		utilruntime.HandleError(fmt.Errorf("unable to retrieve service %v from store: %v", key, err))
 		return err
-	case isLoadbalancerService(svc) && loadbalancerClassMatch(svc):
+	default:
 		klog.Infof("Reconcile service %s/%s, since loadbalancerClass match", svc.Namespace, svc.Name)
 		if err = c.processServiceCreateOrUpdate(svc); err != nil {
 			return err
 		}
-	case isLoadbalancerService(svc):
-		klog.Infof("Skip reconciling service %s/%s, since loadbalancerClass doesn't match", svc.Namespace, svc.Name)
-	default:
-		// skip if it's not service type lb
 	}
 
 	return nil
@@ -183,26 +191,30 @@ func (c *loadbalancerClassServiceController) processServiceCreateOrUpdate(svc *c
 	defer func() {
 		klog.Infof("Finished processing service %s/%s (%v)", svc.Namespace, svc.Name, time.Since(startTime))
 	}()
+
 	// if it's getting deleted, remove the finalizer
 	if !svc.DeletionTimestamp.IsZero() {
 		if err := c.removeFinalizer(svc); err != nil {
 			klog.Infof("Error removing finalizer from service %s/%s", svc.Namespace, svc.Name)
 			return err
 		}
-		c.recorder.Eventf(svc, corev1.EventTypeWarning, "LoadBalancerDeleted", "loadbalancer is deleted")
+		c.recorder.Event(svc, corev1.EventTypeNormal, "LoadBalancerDeleted", "Deleted load balancer")
 		return nil
 	}
+
+	c.recorder.Event(svc, corev1.EventTypeNormal, "EnsuringLoadBalancer", "Ensuring load balancer")
 
 	if err := c.addFinalizer(svc); err != nil {
 		klog.Infof("Error adding finalizer to service %s/%s", svc.Namespace, svc.Name)
 		return err
 	}
 
-	_, err := syncLoadBalancer(context.Background(), c.kubeClient, svc, c.cmName, c.cmNamespace)
-	if err != nil {
+	if _, err := syncLoadBalancer(context.Background(), c.kubeClient, svc, c.cmName, c.cmNamespace); err != nil {
 		c.recorder.Eventf(svc, corev1.EventTypeWarning, "syncLoadBalancer", "Error syncing load balancer: %v", err)
 		return err
 	}
+
+	c.recorder.Event(svc, corev1.EventTypeNormal, "EnsuredLoadBalancer", "Ensured load balancer")
 
 	return nil
 }
@@ -237,12 +249,72 @@ func (c *loadbalancerClassServiceController) removeFinalizer(service *corev1.Ser
 	return err
 }
 
-func loadbalancerClassMatch(svc *corev1.Service) bool {
-	return svc != nil && svc.Spec.LoadBalancerClass != nil && *svc.Spec.LoadBalancerClass == LoadbalancerClass
+// needsUpdate checks if load balancer needs to be updated due to change in attributes.
+func (c *loadbalancerClassServiceController) needsUpdate(oldService *corev1.Service, newService *corev1.Service) bool {
+	if wantsLoadBalancer(newService) && !reflect.DeepEqual(oldService.Spec.LoadBalancerSourceRanges, newService.Spec.LoadBalancerSourceRanges) {
+		c.recorder.Eventf(newService, corev1.EventTypeNormal, "LoadBalancerSourceRanges", "%v -> %v",
+			oldService.Spec.LoadBalancerSourceRanges, newService.Spec.LoadBalancerSourceRanges)
+		return true
+	}
+
+	if !portsEqualForLB(oldService, newService) || oldService.Spec.SessionAffinity != newService.Spec.SessionAffinity {
+		return true
+	}
+
+	if !reflect.DeepEqual(oldService.Spec.SessionAffinityConfig, newService.Spec.SessionAffinityConfig) {
+		return true
+	}
+	if !loadBalancerIPsAreEqual(oldService, newService) {
+		c.recorder.Eventf(newService, corev1.EventTypeNormal, "LoadbalancerIP", "%v -> %v",
+			oldService.Spec.LoadBalancerIP, newService.Spec.LoadBalancerIP)
+		return true
+	}
+	if len(oldService.Spec.ExternalIPs) != len(newService.Spec.ExternalIPs) {
+		c.recorder.Eventf(newService, corev1.EventTypeNormal, "ExternalIP", "Count: %v -> %v",
+			len(oldService.Spec.ExternalIPs), len(newService.Spec.ExternalIPs))
+		return true
+	}
+	for i := range oldService.Spec.ExternalIPs {
+		if oldService.Spec.ExternalIPs[i] != newService.Spec.ExternalIPs[i] {
+			c.recorder.Eventf(newService, corev1.EventTypeNormal, "ExternalIP", "Added: %v",
+				newService.Spec.ExternalIPs[i])
+			return true
+		}
+	}
+	if !reflect.DeepEqual(oldService.Annotations, newService.Annotations) {
+		return true
+	}
+	if oldService.UID != newService.UID {
+		c.recorder.Eventf(newService, corev1.EventTypeNormal, "UID", "%v -> %v",
+			oldService.UID, newService.UID)
+		return true
+	}
+	if oldService.Spec.ExternalTrafficPolicy != newService.Spec.ExternalTrafficPolicy {
+		c.recorder.Eventf(newService, corev1.EventTypeNormal, "ExternalTrafficPolicy", "%v -> %v",
+			oldService.Spec.ExternalTrafficPolicy, newService.Spec.ExternalTrafficPolicy)
+		return true
+	}
+	if oldService.Spec.HealthCheckNodePort != newService.Spec.HealthCheckNodePort {
+		c.recorder.Eventf(newService, corev1.EventTypeNormal, "HealthCheckNodePort", "%v -> %v",
+			oldService.Spec.HealthCheckNodePort, newService.Spec.HealthCheckNodePort)
+		return true
+	}
+
+	// User can upgrade (add another clusterIP or ipFamily) or can downgrade (remove secondary clusterIP or ipFamily),
+	// but CAN NOT change primary/secondary clusterIP || ipFamily UNLESS they are changing from/to/ON ExternalName
+	// so not care about order, only need check the length.
+	if len(oldService.Spec.IPFamilies) != len(newService.Spec.IPFamilies) {
+		c.recorder.Eventf(newService, corev1.EventTypeNormal, "IPFamilies", "Count: %v -> %v",
+			len(oldService.Spec.IPFamilies), len(newService.Spec.IPFamilies))
+		return true
+	}
+
+	return false
 }
 
-func isLoadbalancerService(svc *corev1.Service) bool {
-	return svc != nil && svc.Spec.Type == corev1.ServiceTypeLoadBalancer
+// only return service that's service type loadbalancer and loadbalancerclass match
+func wantsLoadBalancer(svc *corev1.Service) bool {
+	return svc != nil && svc.Spec.Type == corev1.ServiceTypeLoadBalancer && svc.Spec.LoadBalancerClass != nil && *svc.Spec.LoadBalancerClass == LoadbalancerClass
 }
 
 // removeString returns a newly created []string that contains all items from slice that
@@ -255,4 +327,78 @@ func removeString(slice []string, s string) []string {
 		}
 	}
 	return newSlice
+}
+
+// needsCleanup checks if load balancer needs to be cleaned up as indicated by finalizer.
+func needsCleanup(service *corev1.Service) bool {
+	if !servicehelper.HasLBFinalizer(service) {
+		return false
+	}
+
+	if !service.ObjectMeta.DeletionTimestamp.IsZero() {
+		return true
+	}
+
+	return false
+}
+
+func loadBalancerIPsAreEqual(oldService, newService *corev1.Service) bool {
+	return oldService.Spec.LoadBalancerIP == newService.Spec.LoadBalancerIP
+}
+
+func portsEqualForLB(x, y *corev1.Service) bool {
+	xPorts := getPortsForLB(x)
+	yPorts := getPortsForLB(y)
+	return portSlicesEqualForLB(xPorts, yPorts)
+}
+
+func getPortsForLB(service *corev1.Service) []*corev1.ServicePort {
+	ports := []*corev1.ServicePort{}
+	for i := range service.Spec.Ports {
+		sp := &service.Spec.Ports[i]
+		ports = append(ports, sp)
+	}
+	return ports
+}
+
+func portSlicesEqualForLB(x, y []*corev1.ServicePort) bool {
+	if len(x) != len(y) {
+		return false
+	}
+
+	for i := range x {
+		if !portEqualForLB(x[i], y[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func portEqualForLB(x, y *corev1.ServicePort) bool {
+	// TODO: Should we check name?  (In theory, an LB could expose it)
+	if x.Name != y.Name {
+		return false
+	}
+
+	if x.Protocol != y.Protocol {
+		return false
+	}
+
+	if x.Port != y.Port {
+		return false
+	}
+
+	if x.NodePort != y.NodePort {
+		return false
+	}
+
+	if x.TargetPort != y.TargetPort {
+		return false
+	}
+
+	if !reflect.DeepEqual(x.AppProtocol, y.AppProtocol) {
+		return false
+	}
+
+	return true
 }
