@@ -888,7 +888,7 @@ func Test_syncLoadBalancer(t *testing.T) {
 				}
 			}
 
-			_, err = mgr.syncLoadBalancer(context.Background(), &tt.originalService) // #nosec G601
+			_, err = syncLoadBalancer(context.Background(), mgr.kubeClient, &tt.originalService, cm, ns) // #nosec G601
 			if err != nil {
 				t.Error(err)
 			}

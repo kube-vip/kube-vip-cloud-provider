@@ -19,7 +19,8 @@ The `kube-vip-cloud-provider` will only implement the `loadBalancer` functionali
 - Setting the special IP `0.0.0.0` for DHCP workflow.
 - Support single stack IPv6 or IPv4
 - Support for dualstack via the annotation: `kube-vip.io/loadbalancerIPs: 192.168.10.10,2001:db8::1`
-- Support ascending and descending search order by setting search-order=desc
+- Support ascending and descending search order when allocating IP from pool or range by setting search-order=desc
+- Support loadbalancerClass `kube-vip.io/kube-vip-class`
 
 ## Installing the `kube-vip-cloud-provider`
 
@@ -133,6 +134,12 @@ address in each of both IP families for the pool.
 ## Special DHCP CIDR
 
 Set the CIDR to `0.0.0.0/32`, that will make the controller to give all _LoadBalancers_ the IP `0.0.0.0`.
+
+
+## LoadbalancerClass support
+
+If users only want kube-vip-cloud-provider to allocate ip for specific set of services, they can pass `KUBEVIP_ENABLE_LOADBALANCERCLASS: true` as an environment variable to kube-vip-cloud-provider. kube-vip-cloud-provider will only allocate ip to service with `spec.loadBalancerClass: kube-vip.io/kube-vip-class`.
+
 
 ## Debugging
 

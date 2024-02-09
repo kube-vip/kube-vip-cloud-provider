@@ -19,6 +19,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strconv"
 
 	"github.com/kube-vip/kube-vip-cloud-provider/pkg/provider"
 	"github.com/spf13/pflag"
@@ -48,7 +49,21 @@ func main() {
 
 	fss := cliflag.NamedFlagSets{}
 
-	command := app.NewCloudControllerManagerCommand(opts, cloudInitializer, controllerInitializers(), names.CCMControllerAliases(), fss, wait.NeverStop)
+	controllerInitializers := controllerInitializers()
+	lbc := os.Getenv(provider.EnableLoadbalancerClassEnvKey)
+	if len(lbc) > 0 {
+		enableLBClass, err := strconv.ParseBool(lbc)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%s value '%s' is invalid, %v\n", provider.EnableLoadbalancerClassEnvKey, lbc, err)
+			os.Exit(1)
+		}
+		if enableLBClass {
+			controllerInitializers = make(map[string]app.ControllerInitFuncConstructor)
+			klog.Infoln("skipping default cloud-provider service controller")
+		}
+	}
+
+	command := app.NewCloudControllerManagerCommand(opts, cloudInitializer, controllerInitializers, names.CCMControllerAliases(), fss, wait.NeverStop)
 
 	command.Flags().BoolVar(&provider.OutSideCluster, "OutSideCluster", false, "Start Controller outside of cluster")
 

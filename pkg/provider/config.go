@@ -5,6 +5,7 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 )
 
 // Services functions - once the service data is taken from the configMap, these functions will interact with the data
@@ -45,12 +46,12 @@ import (
 // 	return
 // }
 
-func (k *kubevipLoadBalancerManager) GetConfigMap(ctx context.Context, cm, nm string) (*v1.ConfigMap, error) {
+func getConfigMap(ctx context.Context, kubeClient kubernetes.Interface, cm, nm string) (*v1.ConfigMap, error) {
 	// Attempt to retrieve the config map
-	return k.kubeClient.CoreV1().ConfigMaps(nm).Get(ctx, cm, metav1.GetOptions{})
+	return kubeClient.CoreV1().ConfigMaps(nm).Get(ctx, cm, metav1.GetOptions{})
 }
 
-func (k *kubevipLoadBalancerManager) CreateConfigMap(ctx context.Context, cm, nm string) (*v1.ConfigMap, error) {
+func createConfigMap(ctx context.Context, kubeClient kubernetes.Interface, cm, nm string) (*v1.ConfigMap, error) {
 	// Create new configuration map in the correct namespace
 	newConfigMap := v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
@@ -59,7 +60,7 @@ func (k *kubevipLoadBalancerManager) CreateConfigMap(ctx context.Context, cm, nm
 		},
 	}
 	// Return results of configMap create
-	return k.kubeClient.CoreV1().ConfigMaps(nm).Create(ctx, &newConfigMap, metav1.CreateOptions{})
+	return kubeClient.CoreV1().ConfigMaps(nm).Create(ctx, &newConfigMap, metav1.CreateOptions{})
 }
 
 // func (k *kubevipLoadBalancerManager) UpdateConfigMap(ctx context.Context, cm *v1.ConfigMap, s *kubevipServices) (*v1.ConfigMap, error) {
