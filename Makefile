@@ -60,6 +60,8 @@ simplify:
 	@gofmt -s -l -w $(SRC)
 
 check: test
+	@test -z $(shell gofmt -l main.go | tee /dev/stderr) || echo "[WARN] Fix formatting issues with 'make fmt'"
+	@for d in $$(go list ./... | grep -v /vendor/); do golint $${d}; done
 	@go run github.com/golangci/golangci-lint/cmd/golangci-lint@v1.56.2 run
 	@go vet ./...
 

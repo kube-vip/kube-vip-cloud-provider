@@ -73,8 +73,7 @@ func getDefaultLoadBalancerName(service *v1.Service) string {
 	return cloudprovider.DefaultLoadBalancerName(service)
 }
 
-// nolint
-func (k *kubevipLoadBalancerManager) deleteLoadBalancer(ctx context.Context, service *v1.Service) error {
+func (k *kubevipLoadBalancerManager) deleteLoadBalancer(_ context.Context, service *v1.Service) error {
 	klog.Infof("deleting service '%s' (%s)", service.Name, service.UID)
 
 	return nil
