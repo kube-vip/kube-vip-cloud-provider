@@ -9,6 +9,7 @@ import (
 	"k8s.io/klog"
 )
 
+// OutOfIPsError stores informations that are required to return out of ip error
 type OutOfIPsError struct {
 	namespace string
 	pool      string
@@ -41,7 +42,6 @@ type ipManager struct {
 
 // FindAvailableHostFromRange - will look through the cidr and the address Manager and find a free address (if possible)
 func FindAvailableHostFromRange(namespace, ipRange string, inUseIPSet *netipx.IPSet, descOrder bool) (string, error) {
-
 	// Look through namespaces and update one if it exists
 	for x := range Manager {
 		if Manager[x].namespace == namespace {
@@ -88,7 +88,6 @@ func FindAvailableHostFromRange(namespace, ipRange string, inUseIPSet *netipx.IP
 
 // FindAvailableHostFromCidr - will look through the cidr and the address Manager and find a free address (if possible)
 func FindAvailableHostFromCidr(namespace, cidr string, inUseIPSet *netipx.IPSet, descOrder bool) (string, error) {
-
 	// Look through namespaces and update one if it exists
 	for x := range Manager {
 		if Manager[x].namespace == namespace {
@@ -128,7 +127,6 @@ func FindAvailableHostFromCidr(namespace, cidr string, inUseIPSet *netipx.IPSet,
 		return "", &OutOfIPsError{namespace: namespace, pool: cidr, isCidr: true}
 	}
 	return addr.String(), nil
-
 }
 
 // // RenewAddress - removes the mark on an address

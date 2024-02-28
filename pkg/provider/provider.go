@@ -27,7 +27,7 @@ const (
 	// KubeVipClientConfig is the default name of the load balancer config Map
 	KubeVipClientConfig = "kubevip"
 
-	// KubeVipClientConfig is the default namespace of the load balancer config Map
+	// KubeVipClientConfigNamespace is the default namespace of the load balancer config Map
 	KubeVipClientConfigNamespace = "kube-system"
 
 	// KubeVipServicesKey is the key in the ConfigMap that has the services configuration
@@ -93,7 +93,6 @@ func newKubeVipCloudProvider(io.Reader) (cloudprovider.Interface, error) {
 			return nil, fmt.Errorf("error creating kubernetes client config: %s", err.Error())
 		}
 		cl, err = kubernetes.NewForConfig(cfg)
-
 		if err != nil {
 			return nil, fmt.Errorf("error creating kubernetes client: %s", err.Error())
 		}
@@ -104,7 +103,6 @@ func newKubeVipCloudProvider(io.Reader) (cloudprovider.Interface, error) {
 			panic(err.Error())
 		}
 		cl, err = kubernetes.NewForConfig(config)
-
 		if err != nil {
 			return nil, fmt.Errorf("error creating kubernetes client: %s", err.Error())
 		}
