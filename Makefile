@@ -20,6 +20,11 @@ SRC = $(shell find . -type f -name '*.go' -not -path "./vendor/*")
 DOCKERTAG ?= $(VERSION)
 REPOSITORY ?= kubevip
 
+KUBEVIPCLOUDPROVIDER_E2E_IMAGE ?= ghcr.io/kube-vip/kube-vip-cloud-provider:main
+# Optional variables
+# Run specific test specs (matched by regex)
+KUBEVIPCLOUDPROVIDER_E2E_PACKAGE_FOCUS ?=
+
 .PHONY: all build clean install uninstall fmt simplify check run
 
 all: check install
@@ -70,3 +75,30 @@ run: install
 
 test:
 	go test ./...
+
+.PHONY: setup-kind-cluster
+setup-kind-cluster: ## Make a kind cluster for testing
+	./test/scripts/make-kind-cluster.sh
+
+## Loads kube-vip-cloud-provider image into kind cluster specified by CLUSTERNAME (default
+## kvcp-e2e). By default for local development will build the current
+## working kube-vip-cloud-provider source and load into the cluster. If LOAD_PREBUILT_IMAGE
+## is specified and set to true, it will load a pre-build image. This requires
+## the multiarch-build target to have been run which puts the Kube-vip-cloud-provider docker
+## image at <repo>/image/kube-vip-cloud-provider-version.tar.gz. This second option is chosen
+## in CI to speed up builds.
+.PHONY: load-kvcp-image-kind
+load-kvcp-image-kind: ## Load Kube-vip-cloud-provider image from building working source or pre-built image into Kind.
+	./test/scripts/kind-load-kvcp-image.sh
+
+.PHONY: cleanup-kind
+cleanup-kind:
+	./test/scripts/cleanup.sh
+
+.PHONY: e2e
+e2e: | setup-kind-cluster load-kvcp-image-kind run-e2e cleanup-kind ## Run E2E tests against a real k8s cluster
+
+.PHONY: run-e2e
+run-e2e:
+	KUBEVIPCLOUDPROVIDER_E2E_IMAGE=$(KUBEVIPCLOUDPROVIDER_E2E_IMAGE) \
+	go run github.com/onsi/ginkgo/v2/ginkgo -tags=e2e -mod=readonly -keep-going -randomize-suites -randomize-all -poll-progress-after=120s --focus '$(KUBEVIPCLOUDPROVIDER_E2E_TEST_FOCUS)' -r $(KUBEVIPCLOUDPROVIDER_E2E_PACKAGE_FOCUS)
