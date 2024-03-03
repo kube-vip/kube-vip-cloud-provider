@@ -97,8 +97,7 @@ cleanup-kind:
 	./test/scripts/cleanup.sh
 
 .PHONY: e2e
-e2e: | setup-kind-cluster run-e2e cleanup-kind ## Run E2E tests against a real k8s cluster
-# e2e: | setup-kind-cluster load-kvcp-image-kind run-e2e cleanup-kind ## Run E2E tests against a real k8s cluster
+e2e: | setup-kind-cluster load-kvcp-image-kind run-e2e cleanup-kind ## Run E2E tests against a real k8s cluster
 
 .PHONY: run-e2e
 run-e2e:
