@@ -38,7 +38,7 @@ if [ "${LOAD_PREBUILT_IMAGE}" = "true" ]; then
 else
     # Build the current version of Kube-vip-cloud-provider.
     VERSION="v$$"
-    make -C ${REPO} container IMAGE=ghcr.io/kube-vip/kube-vip-cloud-provider VERSION=$VERSION
+    make -C ${REPO} image-amd64-build-only REPOSITORY=ghcr.io/kube-vip DOCKERTAG=$VERSION
 
     # Also tag as main since test suites will use this tag unless overridden.
     docker tag ghcr.io/kube-vip/kube-vip-cloud-provider:${VERSION} ghcr.io/kube-vip/kube-vip-cloud-provider:main
