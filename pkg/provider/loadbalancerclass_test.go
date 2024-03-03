@@ -15,7 +15,7 @@ import (
 	klog "k8s.io/klog/v2"
 	"k8s.io/utils/ptr"
 
-	tu "github.com/kube-vip/kube-vip-cloud-provider/pkg/internal/testutil"
+	tu "github.com/kube-vip/kube-vip-cloud-provider/pkg/testutil"
 )
 
 func alwaysReady() bool { return true }

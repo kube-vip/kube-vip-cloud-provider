@@ -23,7 +23,8 @@ REPOSITORY ?= kubevip
 KUBE_VIP_CLOUD_PROVIDER_E2E_IMAGE ?= ghcr.io/kube-vip/kube-vip-cloud-provider:main
 # Optional variables
 # Run specific test specs (matched by regex)
-KUBEVIPCLOUDPROVIDER_E2E_PACKAGE_FOCUS ?=
+KUBE_VIP_CLOUD_PROVIDER_E2E_TEST_FOCUS ?=
+KUBE_VIP_CLOUD_PROVIDER_E2E_PACKAGE_FOCUS ?= ./test/e2e
 
 .PHONY: all build clean install uninstall fmt simplify check run
 
@@ -55,7 +56,7 @@ image-amd64-build-only:
 # For faster local builds
 image-amd64:
 	@docker buildx build  --platform linux/amd64  --build-arg VERSION=$(VERSION) --push -t $(REPOSITORY)/$(TARGET):$(DOCKERTAG) .
-	@echo New Multi Architecture Docker image created
+	@echo New amd64 Docker image created
 
 image:
 	@docker buildx build  --platform linux/amd64,linux/arm64,linux/arm/v7 --build-arg VERSION=$(VERSION) --push -t $(REPOSITORY)/$(TARGET):$(DOCKERTAG) .
@@ -96,9 +97,10 @@ cleanup-kind:
 	./test/scripts/cleanup.sh
 
 .PHONY: e2e
-e2e: | setup-kind-cluster load-kvcp-image-kind run-e2e cleanup-kind ## Run E2E tests against a real k8s cluster
+e2e: | setup-kind-cluster run-e2e cleanup-kind ## Run E2E tests against a real k8s cluster
+# e2e: | setup-kind-cluster load-kvcp-image-kind run-e2e cleanup-kind ## Run E2E tests against a real k8s cluster
 
 .PHONY: run-e2e
 run-e2e:
 	KUBE_VIP_CLOUD_PROVIDER_E2E_IMAGE=$(KUBE_VIP_CLOUD_PROVIDER_E2E_IMAGE) \
-	go run github.com/onsi/ginkgo/v2/ginkgo -tags=e2e -mod=readonly -keep-going -randomize-suites -randomize-all -poll-progress-after=120s --focus '$(KUBEVIPCLOUDPROVIDER_E2E_TEST_FOCUS)' -r $(KUBEVIPCLOUDPROVIDER_E2E_PACKAGE_FOCUS)
+	go run github.com/onsi/ginkgo/v2/ginkgo -tags=e2e -mod=readonly -keep-going -randomize-suites -randomize-all -poll-progress-after=120s --focus '$(KUBE_VIP_CLOUD_PROVIDER_E2E_TEST_FOCUS)' -r $(KUBE_VIP_CLOUD_PROVIDER_E2E_PACKAGE_FOCUS)
