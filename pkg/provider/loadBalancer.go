@@ -18,13 +18,16 @@ import (
 )
 
 const (
-	// this annotation is for specifying IPs for a loadbalancer
+	// LoadbalancerIPsAnnotations is for specifying IPs for a loadbalancer
 	// use plural for dual stack support in the future
 	// Example: kube-vip.io/loadbalancerIPs: 10.1.2.3,fd00::100
-	loadbalancerIPsAnnotations = "kube-vip.io/loadbalancerIPs"
-	implementationLabelKey     = "implementation"
-	implementationLabelValue   = "kube-vip"
-	legacyIpamAddressLabelKey  = "ipam-address"
+	LoadbalancerIPsAnnotations = "kube-vip.io/loadbalancerIPs"
+	// ImplementationLabelKey is the label key showing the service is implemented by kube-vip
+	ImplementationLabelKey = "implementation"
+	// ImplementationLabelValue is the label value showing the service is implemented by kube-vip
+	ImplementationLabelValue = "kube-vip"
+	// LegacyIpamAddressLabelKey is the legacy label key showing the service is implemented by kube-vip
+	LegacyIpamAddressLabelKey = "ipam-address"
 )
 
 // kubevipLoadBalancerManager -
@@ -57,7 +60,7 @@ func (k *kubevipLoadBalancerManager) EnsureLoadBalancerDeleted(ctx context.Conte
 }
 
 func (k *kubevipLoadBalancerManager) GetLoadBalancer(_ context.Context, _ string, service *v1.Service) (status *v1.LoadBalancerStatus, exists bool, err error) {
-	if service.Labels[implementationLabelKey] == implementationLabelValue {
+	if service.Labels[ImplementationLabelKey] == ImplementationLabelValue {
 		return &service.Status.LoadBalancer, true, nil
 	}
 	return nil, false, nil
@@ -92,8 +95,8 @@ func syncLoadBalancer(ctx context.Context, kubeClient kubernetes.Interface, serv
 
 	// The loadBalancer address has already been populated
 	if service.Spec.LoadBalancerIP != "" {
-		if v, ok := service.Annotations[loadbalancerIPsAnnotations]; !ok || len(v) == 0 {
-			klog.Warningf("service.Spec.LoadBalancerIP is defined but annotations '%s' is not, assume it's a legacy service, updates its annotations", loadbalancerIPsAnnotations)
+		if v, ok := service.Annotations[LoadbalancerIPsAnnotations]; !ok || len(v) == 0 {
+			klog.Warningf("service.Spec.LoadBalancerIP is defined but annotations '%s' is not, assume it's a legacy service, updates its annotations", LoadbalancerIPsAnnotations)
 			// assume it's legacy service, need to update the annotation.
 			err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 				recentService, getErr := kubeClient.CoreV1().Services(service.Namespace).Get(ctx, service.Name, metav1.GetOptions{})
@@ -103,9 +106,9 @@ func syncLoadBalancer(ctx context.Context, kubeClient kubernetes.Interface, serv
 				if recentService.Annotations == nil {
 					recentService.Annotations = make(map[string]string)
 				}
-				recentService.Annotations[loadbalancerIPsAnnotations] = service.Spec.LoadBalancerIP
+				recentService.Annotations[LoadbalancerIPsAnnotations] = service.Spec.LoadBalancerIP
 				// remove ipam-address label
-				delete(recentService.Labels, legacyIpamAddressLabelKey)
+				delete(recentService.Labels, LegacyIpamAddressLabelKey)
 
 				// Update the actual service with the annotations
 				_, updateErr := kubeClient.CoreV1().Services(recentService.Namespace).Update(ctx, recentService, metav1.UpdateOptions{})
@@ -118,10 +121,10 @@ func syncLoadBalancer(ctx context.Context, kubeClient kubernetes.Interface, serv
 		return &service.Status.LoadBalancer, nil
 	}
 
-	if v, ok := service.Annotations[loadbalancerIPsAnnotations]; ok && len(v) != 0 {
-		klog.Infof("service '%s/%s' annotations '%s' is defined but service.Spec.LoadBalancerIP is not. Assume it's not legacy service", service.Namespace, service.Name, loadbalancerIPsAnnotations)
+	if v, ok := service.Annotations[LoadbalancerIPsAnnotations]; ok && len(v) != 0 {
+		klog.Infof("service '%s/%s' annotations '%s' is defined but service.Spec.LoadBalancerIP is not. Assume it's not legacy service", service.Namespace, service.Name, LoadbalancerIPsAnnotations)
 		// Set Label for service lookups
-		if service.Labels == nil || service.Labels[implementationLabelKey] != implementationLabelValue {
+		if service.Labels == nil || service.Labels[ImplementationLabelKey] != ImplementationLabelValue {
 			klog.Infof("service '%s/%s' created with pre-defined ip '%s'", service.Namespace, service.Name, v)
 			err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 				recentService, getErr := kubeClient.CoreV1().Services(service.Namespace).Get(ctx, service.Name, metav1.GetOptions{})
@@ -132,7 +135,7 @@ func syncLoadBalancer(ctx context.Context, kubeClient kubernetes.Interface, serv
 					// Just because ..
 					recentService.Labels = make(map[string]string)
 				}
-				recentService.Labels[implementationLabelKey] = implementationLabelValue
+				recentService.Labels[ImplementationLabelKey] = ImplementationLabelValue
 				// Update the actual service with the annotations
 				_, updateErr := kubeClient.CoreV1().Services(recentService.Namespace).Update(ctx, recentService, metav1.UpdateOptions{})
 				return updateErr
@@ -177,7 +180,7 @@ func syncLoadBalancer(ctx context.Context, kubeClient kubernetes.Interface, serv
 
 	builder := &netipx.IPSetBuilder{}
 	for x := range svcs.Items {
-		if ip, ok := svcs.Items[x].Annotations[loadbalancerIPsAnnotations]; ok {
+		if ip, ok := svcs.Items[x].Annotations[LoadbalancerIPsAnnotations]; ok {
 			addr, err := netip.ParseAddr(ip)
 			if err != nil {
 				return nil, err
@@ -212,13 +215,13 @@ func syncLoadBalancer(ctx context.Context, kubeClient kubernetes.Interface, serv
 			recentService.Labels = make(map[string]string)
 		}
 		// Set Label for service lookups
-		recentService.Labels[implementationLabelKey] = implementationLabelValue
+		recentService.Labels[ImplementationLabelKey] = ImplementationLabelValue
 
 		if recentService.Annotations == nil {
 			recentService.Annotations = make(map[string]string)
 		}
 		// use annotation instead of label to support ipv6
-		recentService.Annotations[loadbalancerIPsAnnotations] = loadBalancerIPs
+		recentService.Annotations[LoadbalancerIPsAnnotations] = loadBalancerIPs
 
 		// this line will be removed once kube-vip can recognize annotations
 		// Set IPAM address to Load Balancer Service
@@ -396,7 +399,7 @@ func discoverAddress(namespace, pool string, inUseIPSet *netipx.IPSet, descOrder
 }
 
 func getKubevipImplementationLabel() string {
-	return fmt.Sprintf("%s=%s", implementationLabelKey, implementationLabelValue)
+	return fmt.Sprintf("%s=%s", ImplementationLabelKey, ImplementationLabelValue)
 }
 
 func getSearchOrder(cm *v1.ConfigMap) (descOrder bool) {

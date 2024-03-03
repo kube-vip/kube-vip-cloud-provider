@@ -1,16 +1,3 @@
-/*
-Copyright 2021 The Kubernetes Authors.
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-    http://www.apache.org/licenses/LICENSE-2.0
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
-
 package provider
 
 import (
@@ -20,15 +7,15 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	servicehelper "k8s.io/cloud-provider/service/helpers"
+	klog "k8s.io/klog/v2"
 	"k8s.io/utils/ptr"
 
-	klog "k8s.io/klog/v2"
+	tu "github.com/kube-vip/kube-vip-cloud-provider/pkg/internal/testutil"
 )
 
 func alwaysReady() bool { return true }
@@ -75,36 +62,36 @@ func TestSyncLoadBalancerIfNeeded(t *testing.T) {
 	}{
 		{
 			desc:              "udp service that wants LB",
-			service:           newService("udp-service", tweakAddPorts(corev1.ProtocolUDP, 0), tweakAddLBClass(ptr.To(LoadbalancerClass))),
+			service:           tu.NewService("udp-service", tu.TweakAddPorts(corev1.ProtocolUDP, 0), tu.TweakAddLBClass(ptr.To(LoadbalancerClass))),
 			expectNumOfUpdate: 1,
 			expectNumOfPatch:  1,
 		},
 		{
 			desc:              "tcp service that wants LB",
-			service:           newService("basic-service1", tweakAddLBClass(ptr.To(LoadbalancerClass))),
+			service:           tu.NewService("basic-service1", tu.TweakAddLBClass(ptr.To(LoadbalancerClass))),
 			expectNumOfUpdate: 1,
 			expectNumOfPatch:  1,
 		},
 		{
 			desc:              "sctp service that wants LB",
-			service:           newService("sctp-service", tweakAddPorts(corev1.ProtocolSCTP, 0), tweakAddLBClass(ptr.To(LoadbalancerClass))),
+			service:           tu.NewService("sctp-service", tu.TweakAddPorts(corev1.ProtocolSCTP, 0), tu.TweakAddLBClass(ptr.To(LoadbalancerClass))),
 			expectNumOfUpdate: 1,
 			expectNumOfPatch:  1,
 		},
 		{
 			desc:              "service specifies incorrect loadBalancerClass",
-			service:           newService("with-external-balancer", tweakAddLBClass(ptr.To(LoadbalancerClass))),
+			service:           tu.NewService("with-external-balancer", tu.TweakAddLBClass(ptr.To(LoadbalancerClass))),
 			expectNumOfUpdate: 1,
 			expectNumOfPatch:  1,
 		},
 		{
 			desc:             "service that needs cleanup",
-			service:          newService("basic-service2", tweakAddLBIngress("8.8.8.8"), tweakAddFinalizers(servicehelper.LoadBalancerCleanupFinalizer), tweakAddDeletionTimestamp(time.Now()), tweakAddLBClass(ptr.To(LoadbalancerClass))),
+			service:          tu.NewService("basic-service2", tu.TweakAddLBIngress("8.8.8.8"), tu.TweakAddFinalizers(servicehelper.LoadBalancerCleanupFinalizer), tu.TweakAddDeletionTimestamp(time.Now()), tu.TweakAddLBClass(ptr.To(LoadbalancerClass))),
 			expectNumOfPatch: 1,
 		},
 		{
 			desc:              "service with finalizer that wants LB",
-			service:           newService("basic-service3", tweakAddFinalizers(servicehelper.LoadBalancerCleanupFinalizer), tweakAddLBClass(ptr.To(LoadbalancerClass))),
+			service:           tu.NewService("basic-service3", tu.TweakAddFinalizers(servicehelper.LoadBalancerCleanupFinalizer), tu.TweakAddLBClass(ptr.To(LoadbalancerClass))),
 			expectNumOfUpdate: 1,
 		},
 	}
@@ -161,48 +148,48 @@ func TestNeedsUpdate(t *testing.T) {
 		{
 			desc: "udp service that wants LB change protocol port",
 			service: []*corev1.Service{
-				newService("udp-service", tweakAddPorts(corev1.ProtocolUDP, 0)),
-				newService("udp-service", tweakAddPorts(corev1.ProtocolUDP, 1)),
+				tu.NewService("udp-service", tu.TweakAddPorts(corev1.ProtocolUDP, 0)),
+				tu.NewService("udp-service", tu.TweakAddPorts(corev1.ProtocolUDP, 1)),
 			},
 			expect: true,
 		},
 		{
 			desc: "service that get ingress update",
 			service: []*corev1.Service{
-				newService("ingress-update-service", tweakAddLBIngress("8.8.8.8")),
-				newService("ingress-update-service", tweakAddLBIngress("1.1.1.1")),
+				tu.NewService("ingress-update-service", tu.TweakAddLBIngress("8.8.8.8")),
+				tu.NewService("ingress-update-service", tu.TweakAddLBIngress("1.1.1.1")),
 			},
 			expect: false,
 		},
 		{
 			desc: "service that get app protocol update",
 			service: []*corev1.Service{
-				newService("app-protocol-service", tweakAddAppProtocol(string(corev1.ProtocolUDP))),
-				newService("app-protocol-service", tweakAddAppProtocol(string(corev1.ProtocolSCTP))),
+				tu.NewService("app-protocol-service", tu.TweakAddAppProtocol(string(corev1.ProtocolUDP))),
+				tu.NewService("app-protocol-service", tu.TweakAddAppProtocol(string(corev1.ProtocolSCTP))),
 			},
 			expect: true,
 		},
 		{
 			desc: "service with update on externaltrafficpolicy",
 			service: []*corev1.Service{
-				newService("basic-etp", tweakAddETP(corev1.ServiceExternalTrafficPolicyLocal)),
-				newService("basic-etp"),
+				tu.NewService("basic-etp", tu.TweakAddETP(corev1.ServiceExternalTrafficPolicyLocal)),
+				tu.NewService("basic-etp"),
 			},
 			expect: true,
 		},
 		{
 			desc: "service with update on ipfamily",
 			service: []*corev1.Service{
-				newService("basic-etp"),
-				newService("basic-etp", tweakSetIPFamilies(corev1.IPv4Protocol)),
+				tu.NewService("basic-etp"),
+				tu.NewService("basic-etp", tu.TweakSetIPFamilies(corev1.IPv4Protocol)),
 			},
 			expect: true,
 		},
 		{
 			desc: "service with update on loadbalancerip",
 			service: []*corev1.Service{
-				newService("basic-etp"),
-				newService("basic-etp", tweakSetLoadbalancerIP("10.0.0.1")),
+				tu.NewService("basic-etp"),
+				tu.NewService("basic-etp", tu.TweakSetLoadbalancerIP("10.0.0.1")),
 			},
 			expect: true,
 		},
@@ -227,22 +214,22 @@ func TestNeedsCleanup(t *testing.T) {
 	}{
 		{
 			desc:    "service doesn't have finalizer or deletion timestamp",
-			service: newService("service"),
+			service: tu.NewService("service"),
 			expect:  false,
 		},
 		{
 			desc:    "service doesn't have finalizer, has deletion timestamp",
-			service: newService("service", tweakAddDeletionTimestamp(time.Now())),
+			service: tu.NewService("service", tu.TweakAddDeletionTimestamp(time.Now())),
 			expect:  false,
 		},
 		{
 			desc:    "service has finalizer, no deletion timestamp",
-			service: newService("service", tweakAddFinalizers(servicehelper.LoadBalancerCleanupFinalizer)),
+			service: tu.NewService("service", tu.TweakAddFinalizers(servicehelper.LoadBalancerCleanupFinalizer)),
 			expect:  false,
 		},
 		{
 			desc:    "service has finalizer and deletion timestamp",
-			service: newService("service", tweakAddFinalizers(servicehelper.LoadBalancerCleanupFinalizer), tweakAddDeletionTimestamp(time.Now())),
+			service: tu.NewService("service", tu.TweakAddFinalizers(servicehelper.LoadBalancerCleanupFinalizer), tu.TweakAddDeletionTimestamp(time.Now())),
 			expect:  true,
 		},
 	}
@@ -253,86 +240,5 @@ func TestNeedsCleanup(t *testing.T) {
 				t.Errorf("expect service clean up to be %t, but get %t", tc.expect, nc)
 			}
 		})
-	}
-}
-
-type serviceTweak func(s *corev1.Service)
-
-func newService(name string, tweaks ...serviceTweak) *corev1.Service {
-	s := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: "default",
-		},
-		Spec: corev1.ServiceSpec{
-			Type:  corev1.ServiceTypeLoadBalancer,
-			Ports: makeServicePort(corev1.ProtocolTCP, 0),
-		},
-	}
-	for _, tw := range tweaks {
-		tw(s)
-	}
-	return s
-}
-
-func tweakAddETP(etpType corev1.ServiceExternalTrafficPolicyType) serviceTweak {
-	return func(s *corev1.Service) {
-		s.Spec.ExternalTrafficPolicy = etpType
-	}
-}
-
-func tweakAddLBIngress(ip string) serviceTweak {
-	return func(s *corev1.Service) {
-		s.Status.LoadBalancer.Ingress = []corev1.LoadBalancerIngress{{IP: ip}}
-	}
-}
-
-func makeServicePort(protocol corev1.Protocol, targetPort int) []corev1.ServicePort {
-	sp := corev1.ServicePort{Port: 80, Protocol: protocol}
-	if targetPort > 0 {
-		sp.TargetPort = intstr.FromInt32(int32(targetPort))
-	}
-	return []corev1.ServicePort{sp}
-}
-
-func tweakAddPorts(protocol corev1.Protocol, targetPort int) serviceTweak {
-	return func(s *corev1.Service) {
-		s.Spec.Ports = makeServicePort(protocol, targetPort)
-	}
-}
-
-func tweakAddLBClass(loadBalancerClass *string) serviceTweak {
-	return func(s *corev1.Service) {
-		s.Spec.LoadBalancerClass = loadBalancerClass
-	}
-}
-
-func tweakAddFinalizers(finalizers ...string) serviceTweak {
-	return func(s *corev1.Service) {
-		s.ObjectMeta.Finalizers = finalizers
-	}
-}
-
-func tweakAddDeletionTimestamp(time time.Time) serviceTweak {
-	return func(s *corev1.Service) {
-		s.ObjectMeta.DeletionTimestamp = &metav1.Time{Time: time}
-	}
-}
-
-func tweakAddAppProtocol(appProtocol string) serviceTweak {
-	return func(s *corev1.Service) {
-		s.Spec.Ports[0].AppProtocol = &appProtocol
-	}
-}
-
-func tweakSetIPFamilies(families ...corev1.IPFamily) serviceTweak {
-	return func(s *corev1.Service) {
-		s.Spec.IPFamilies = families
-	}
-}
-
-func tweakSetLoadbalancerIP(ip string) serviceTweak {
-	return func(s *corev1.Service) {
-		s.Spec.LoadBalancerIP = ip
 	}
 }

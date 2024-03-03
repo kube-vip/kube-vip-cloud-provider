@@ -20,7 +20,7 @@ SRC = $(shell find . -type f -name '*.go' -not -path "./vendor/*")
 DOCKERTAG ?= $(VERSION)
 REPOSITORY ?= kubevip
 
-KUBEVIPCLOUDPROVIDER_E2E_IMAGE ?= ghcr.io/kube-vip/kube-vip-cloud-provider:main
+KUBE_VIP_CLOUD_PROVIDER_E2E_IMAGE ?= ghcr.io/kube-vip/kube-vip-cloud-provider:main
 # Optional variables
 # Run specific test specs (matched by regex)
 KUBEVIPCLOUDPROVIDER_E2E_PACKAGE_FOCUS ?=
@@ -100,5 +100,5 @@ e2e: | setup-kind-cluster load-kvcp-image-kind run-e2e cleanup-kind ## Run E2E t
 
 .PHONY: run-e2e
 run-e2e:
-	KUBEVIPCLOUDPROVIDER_E2E_IMAGE=$(KUBEVIPCLOUDPROVIDER_E2E_IMAGE) \
+	KUBE_VIP_CLOUD_PROVIDER_E2E_IMAGE=$(KUBE_VIP_CLOUD_PROVIDER_E2E_IMAGE) \
 	go run github.com/onsi/ginkgo/v2/ginkgo -tags=e2e -mod=readonly -keep-going -randomize-suites -randomize-all -poll-progress-after=120s --focus '$(KUBEVIPCLOUDPROVIDER_E2E_TEST_FOCUS)' -r $(KUBEVIPCLOUDPROVIDER_E2E_PACKAGE_FOCUS)
