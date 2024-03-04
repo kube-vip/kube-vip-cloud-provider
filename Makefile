@@ -102,4 +102,5 @@ e2e: | setup-kind-cluster load-kvcp-image-kind run-e2e cleanup-kind ## Run E2E t
 .PHONY: run-e2e
 run-e2e:
 	KUBE_VIP_CLOUD_PROVIDER_E2E_IMAGE=$(KUBE_VIP_CLOUD_PROVIDER_E2E_IMAGE) \
-	go run github.com/onsi/ginkgo/v2/ginkgo -tags=e2e -mod=readonly -keep-going -randomize-suites -randomize-all -poll-progress-after=120s --focus '$(KUBE_VIP_CLOUD_PROVIDER_E2E_TEST_FOCUS)' -r $(KUBE_VIP_CLOUD_PROVIDER_E2E_PACKAGE_FOCUS)
+	go run github.com/onsi/ginkgo/v2/ginkgo -tags=e2e -mod=readonly -keep-going  -poll-progress-after=120s --focus '$(KUBE_VIP_CLOUD_PROVIDER_E2E_TEST_FOCUS)' -r $(KUBE_VIP_CLOUD_PROVIDER_E2E_PACKAGE_FOCUS)
+#go run github.com/onsi/ginkgo/v2/ginkgo -tags=e2e -mod=readonly -keep-going -randomize-suites -randomize-all -poll-progress-after=120s --focus '$(KUBE_VIP_CLOUD_PROVIDER_E2E_TEST_FOCUS)' -r $(KUBE_VIP_CLOUD_PROVIDER_E2E_PACKAGE_FOCUS)
