@@ -253,7 +253,7 @@ func (d *Deployment) DeleteResources() error {
 func (d *Deployment) DeleteServiceAccount() error {
 	// Common case of updating object if exists, create otherwise.
 	err := d.client.CoreV1().ServiceAccounts(d.ServiceAccount.Namespace).Delete(context.TODO(), d.ServiceAccount.Name,
-		*&meta_v1.DeleteOptions{PropagationPolicy: ptr.To(meta_v1.DeletePropagationBackground)})
+		meta_v1.DeleteOptions{PropagationPolicy: ptr.To(meta_v1.DeletePropagationBackground)})
 	if api_errors.IsNotFound(err) {
 		return nil
 	}
@@ -281,7 +281,7 @@ func (d *Deployment) DeleteServiceAccount() error {
 func (d *Deployment) DeleteClusterRoleBinding() error {
 	// Common case of updating object if exists, create otherwise.
 	err := d.client.RbacV1().ClusterRoleBindings().Delete(context.TODO(), d.ClusterRoleBinding.Name,
-		*&meta_v1.DeleteOptions{PropagationPolicy: ptr.To(meta_v1.DeletePropagationBackground)})
+		meta_v1.DeleteOptions{PropagationPolicy: ptr.To(meta_v1.DeletePropagationBackground)})
 	if api_errors.IsNotFound(err) {
 		return nil
 	}
@@ -306,7 +306,7 @@ func (d *Deployment) DeleteClusterRoleBinding() error {
 func (d *Deployment) DeleteClusterRole() error {
 	// Common case of updating object if exists, create otherwise.
 	err := d.client.RbacV1().ClusterRoles().Delete(context.TODO(), d.ClusterRole.Name,
-		*&meta_v1.DeleteOptions{PropagationPolicy: ptr.To(meta_v1.DeletePropagationBackground)})
+		meta_v1.DeleteOptions{PropagationPolicy: ptr.To(meta_v1.DeletePropagationBackground)})
 	if api_errors.IsNotFound(err) {
 		return nil
 	}
@@ -334,7 +334,7 @@ func (d *Deployment) DeleteClusterRole() error {
 func (d *Deployment) DeleteConfigMap() error {
 	// Common case of updating object if exists, create otherwise.
 	err := d.client.CoreV1().ConfigMaps(d.ConfigMap.Namespace).Delete(context.TODO(), d.ConfigMap.Name,
-		*&meta_v1.DeleteOptions{PropagationPolicy: ptr.To(meta_v1.DeletePropagationBackground)})
+		meta_v1.DeleteOptions{PropagationPolicy: ptr.To(meta_v1.DeletePropagationBackground)})
 	if api_errors.IsNotFound(err) {
 		return nil
 	}
@@ -362,7 +362,7 @@ func (d *Deployment) DeleteConfigMap() error {
 func (d *Deployment) DeleteDeployment() error {
 	// Common case of updating object if exists, create otherwise.
 	err := d.client.AppsV1().Deployments(d.Deployment.Namespace).Delete(context.TODO(), d.Deployment.Name,
-		*&meta_v1.DeleteOptions{PropagationPolicy: ptr.To(meta_v1.DeletePropagationBackground)})
+		meta_v1.DeleteOptions{PropagationPolicy: ptr.To(meta_v1.DeletePropagationBackground)})
 	if api_errors.IsNotFound(err) {
 		return nil
 	}

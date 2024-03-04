@@ -69,6 +69,10 @@ func NewFramework() *Framework {
 
 	require.NoError(t, deployment.UnmarshalResources())
 
+	// Update deployment's image
+	deployment.Deployment.Spec.Template.Spec.Containers[0].Image = kvcpImage
+	deployment.Deployment.Spec.Template.Spec.Containers[0].ImagePullPolicy = core_v1.PullIfNotPresent
+
 	return &Framework{
 		Client:        client,
 		RetryInterval: time.Second,
