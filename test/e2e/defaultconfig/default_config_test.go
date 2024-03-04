@@ -40,7 +40,7 @@ var _ = Describe("Default config", func() {
 			Specify("Service should be reconciled, has ip assigned and correct label", func() {
 				ctx := context.TODO()
 				By("Create a service type LB")
-				svc := tu.NewService("test1", tu.TweakNamespace("default"))
+				svc := tu.NewService("svc-default", tu.TweakNamespace("default"))
 				_, err := f.Client.CoreV1().Services(svc.Namespace).Create(ctx, svc, meta_v1.CreateOptions{})
 				require.NoError(f.T(), err)
 
