@@ -71,6 +71,7 @@ func NewFramework() *Framework {
 
 	// Update deployment's image
 	deployment.Deployment.Spec.Template.Spec.Containers[0].Image = kvcpImage
+	deployment.Deployment.Spec.Template.Spec.Containers[0].ImagePullPolicy = core_v1.PullIfNotPresent
 
 	return &Framework{
 		Client:        client,
