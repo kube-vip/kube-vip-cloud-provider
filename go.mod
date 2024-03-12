@@ -116,4 +116,5 @@ require (
 	github.com/matttproud/golang_protobuf_extensions v1.0.4 // indirect
 	go4.org/netipx v0.0.0-20231129151722-fdeea329fbba
 	golang.org/x/net v0.20.0 // indirect
+	github.com/billryan/collections v0.1.0
 )
