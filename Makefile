@@ -26,7 +26,7 @@ KUBE_VIP_CLOUD_PROVIDER_E2E_IMAGE ?= ghcr.io/kube-vip/kube-vip-cloud-provider:ma
 KUBE_VIP_CLOUD_PROVIDER_E2E_TEST_FOCUS ?=
 KUBE_VIP_CLOUD_PROVIDER_E2E_PACKAGE_FOCUS ?= ./test/e2e
 
-.PHONY: all build clean install uninstall fmt simplify check run
+.PHONY: all build clean install uninstall fmt simplify check run test
 
 all: check install
 
