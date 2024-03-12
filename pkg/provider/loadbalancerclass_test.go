@@ -2,6 +2,8 @@ package provider
 
 import (
 	"context"
+	"k8s.io/api/core/v1"
+	core "k8s.io/client-go/testing"
 	"testing"
 	"time"
 
@@ -134,6 +136,127 @@ func TestSyncLoadBalancerIfNeeded(t *testing.T) {
 			}
 			if patchNum != tc.expectNumOfPatch {
 				t.Errorf("expect %d patches, got %d patches.", tc.expectNumOfPatch, patchNum)
+			}
+		})
+	}
+}
+
+func newSmallIPPoolConfigMap() *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      KubeVipClientConfig,
+			Namespace: KubeVipClientConfigNamespace,
+		},
+		Data: map[string]string{
+			"cidr-global":        "10.0.0.0/30",
+			"allow-share-global": "true",
+		},
+	}
+}
+
+func TestSyncLoadBalancerIfNeededWithMultipleIpUse(t *testing.T) {
+	testCases := []struct {
+		desc              string
+		service           *corev1.Service
+		expectIP          string
+		expectNumOfUpdate int
+		expectNumOfPatch  int
+		expectError       bool
+	}{
+		{
+			desc:              "udp service that wants LB",
+			service:           tu.NewService("udp-service", tu.TweakAddPorts2(corev1.ProtocolUDP, 123, 123), tu.TweakAddLBClass(ptr.To(LoadbalancerClass))),
+			expectIP:          "10.0.0.1",
+			expectNumOfUpdate: 1,
+			expectNumOfPatch:  1,
+		},
+		{
+			desc:              "tcp service that wants LB",
+			service:           tu.NewService("basic-service1", tu.TweakAddPorts2(corev1.ProtocolTCP, 345, 345), tu.TweakAddLBClass(ptr.To(LoadbalancerClass))),
+			expectIP:          "10.0.0.1",
+			expectNumOfUpdate: 1,
+			expectNumOfPatch:  1,
+		},
+		{
+			desc:              "sctp service that wants LB",
+			service:           tu.NewService("sctp-service", tu.TweakAddPorts2(corev1.ProtocolSCTP, 1234, 1234), tu.TweakAddLBClass(ptr.To(LoadbalancerClass))),
+			expectIP:          "10.0.0.1",
+			expectNumOfUpdate: 1,
+			expectNumOfPatch:  1,
+		},
+		{
+			desc:              "service specifies incorrect loadBalancerClass",
+			service:           tu.NewService("with-external-balancer", tu.TweakAddLBClass(ptr.To(LoadbalancerClass))),
+			expectIP:          "10.0.0.1",
+			expectNumOfUpdate: 1,
+			expectNumOfPatch:  1,
+		},
+		{
+			desc:             "service that needs cleanup",
+			service:          tu.NewService("basic-service2", tu.TweakAddLBIngress("8.8.8.8"), tu.TweakAddFinalizers(servicehelper.LoadBalancerCleanupFinalizer), tu.TweakAddDeletionTimestamp(time.Now()), tu.TweakAddLBClass(ptr.To(LoadbalancerClass))),
+			expectNumOfPatch: 1,
+		},
+		{
+			desc:              "service with finalizer that wants LB",
+			service:           tu.NewService("basic-service3", tu.TweakAddFinalizers(servicehelper.LoadBalancerCleanupFinalizer), tu.TweakAddLBClass(ptr.To(LoadbalancerClass))),
+			expectIP:          "10.0.0.2",
+			expectNumOfUpdate: 1,
+		},
+		{
+			desc:              "another tcp service that wants LB",
+			service:           tu.NewService("basic-service4", tu.TweakAddPorts2(corev1.ProtocolTCP, 80, 80), tu.TweakAddLBClass(ptr.To(LoadbalancerClass))),
+			expectNumOfUpdate: 0,
+			expectNumOfPatch:  1,
+			expectError:       true,
+		},
+	}
+
+	// create ip pool for service to use
+	client := fake.NewSimpleClientset()
+	ctx := context.Background()
+	cm := newSmallIPPoolConfigMap()
+	if _, err := client.CoreV1().ConfigMaps(cm.Namespace).Create(ctx, cm, metav1.CreateOptions{}); err != nil {
+		t.Errorf("Failed to prepare configmap %s for testing: %v", cm.Name, err)
+	}
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			c := newController(client)
+			// create service
+			if _, err := client.CoreV1().Services(tc.service.Namespace).Create(ctx, tc.service, metav1.CreateOptions{}); err != nil {
+				t.Errorf("Failed to prepare service %s for testing: %v", tc.service, err)
+			}
+			client.ClearActions()
+
+			// run process processServiceCreateOrUpdate
+			if err := c.processServiceCreateOrUpdate(tc.service); err != nil {
+				if !tc.expectError {
+					t.Errorf("failed to update service %s: %v", tc.service.Name, err)
+				}
+			}
+			actions := client.Actions()
+			updateNum := 0
+			patchNum := 0
+			lbIP := ""
+			for _, action := range actions {
+				switch a := action.(type) {
+				case core.UpdateActionImpl:
+					s := a.Object.(*v1.Service)
+					lbIP = s.ObjectMeta.Annotations["kube-vip.io/loadbalancerIPs"]
+					updateNum++
+				case core.PatchActionImpl:
+					patchNum++
+				}
+			}
+			if updateNum != tc.expectNumOfUpdate {
+				t.Errorf("expect %d updates, got %d updates.", tc.expectNumOfUpdate, updateNum)
+			}
+			if patchNum != tc.expectNumOfPatch {
+				t.Errorf("expect %d patches, got %d patches.", tc.expectNumOfPatch, patchNum)
+			}
+			if lbIP != tc.expectIP {
+				t.Errorf("expect %s LbIP, got %s.", tc.expectIP, lbIP)
 			}
 		})
 	}

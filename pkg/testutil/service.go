@@ -58,10 +58,24 @@ func makeServicePort(protocol corev1.Protocol, targetPort int) []corev1.ServiceP
 	return []corev1.ServicePort{sp}
 }
 
+func makeServicePort2(protocol corev1.Protocol, targetPort int, servicePort int32) []corev1.ServicePort {
+	sp := corev1.ServicePort{Port: servicePort, Protocol: protocol}
+	if targetPort > 0 {
+		sp.TargetPort = intstr.FromInt32(int32(targetPort))
+	}
+	return []corev1.ServicePort{sp}
+}
+
 // TweakAddPorts returns a func that changes the ServicePort of a service
 func TweakAddPorts(protocol corev1.Protocol, targetPort int) ServiceTweak {
 	return func(s *corev1.Service) {
 		s.Spec.Ports = makeServicePort(protocol, targetPort)
+	}
+}
+
+func TweakAddPorts2(protocol corev1.Protocol, sourcePort int32, targetPort int) ServiceTweak {
+	return func(s *corev1.Service) {
+		s.Spec.Ports = makeServicePort2(protocol, targetPort, sourcePort)
 	}
 }
 

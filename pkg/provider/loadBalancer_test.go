@@ -23,15 +23,17 @@ func Test_DiscoveryPoolCIDR(t *testing.T) {
 	dummy.Data["cidr-dummystart"] = "172.16.0.1/24"
 	dummy.Data["cidr-global"] = "192.168.1.1/24"
 	dummy.Data["cidr-system"] = "10.10.10.8/29"
+	dummy.Data["allow-share-system"] = "true"
 	dummy.Data["cidr-dummyend"] = "172.16.0.2/24"
 	dummy.Data["cidr-ipv6"] = "2001::10/127"
 
 	tests := []struct {
-		name     string
-		args     args
-		want     string
-		wantBool bool
-		wantErr  bool
+		name       string
+		args       args
+		want       string
+		allowShare bool
+		wantBool   bool
+		wantErr    bool
 	}{
 		{
 			name: "cidr lookup for known namespace",
@@ -39,9 +41,10 @@ func Test_DiscoveryPoolCIDR(t *testing.T) {
 				*dummy,
 				"system",
 			},
-			want:     "10.10.10.8/29",
-			wantBool: false,
-			wantErr:  false,
+			want:       "10.10.10.8/29",
+			allowShare: true,
+			wantBool:   false,
+			wantErr:    false,
 		},
 		{
 			name: "ipv6, cidr lookup for known namespace",
@@ -67,13 +70,16 @@ func Test_DiscoveryPoolCIDR(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotString, gotBool, err := discoverPool(&tt.args.data, tt.args.cidr, "") // #nosec G601
+			gotString, gotBool, allowShare, err := discoverPool(&tt.args.data, tt.args.cidr, "") // #nosec G601
 			if (err != nil) != tt.wantErr {
 				t.Errorf("discoverPool() error: %v, expected: %v", err, tt.wantErr)
 				return
 			}
 			if !assert.EqualValues(t, gotString, tt.want) && !assert.EqualValues(t, gotBool, tt.wantBool) {
 				t.Errorf("discoverPool() returned: %s : %v, expected: %s : %v", gotString, gotBool, tt.want, tt.wantBool)
+			}
+			if allowShare != tt.allowShare {
+				t.Errorf("discoverPool() has invalid allowShared. expected: %v, got %v", tt.allowShare, allowShare)
 			}
 		})
 	}
@@ -134,7 +140,7 @@ func Test_DiscoveryPoolRange(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotString, gotBool, err := discoverPool(&tt.args.data, tt.args.ipRange, "") // #nosec G601
+			gotString, gotBool, _, err := discoverPool(&tt.args.data, tt.args.ipRange, "") // #nosec G601
 			if (err != nil) != tt.wantErr {
 				t.Errorf("discoverPool() error: %v, expected: %v", err, tt.wantErr)
 				return

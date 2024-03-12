@@ -3,7 +3,9 @@ package provider
 import (
 	"context"
 	"fmt"
+	"github.com/billryan/collections/set"
 	"net/netip"
+	"strconv"
 	"strings"
 
 	"github.com/kube-vip/kube-vip-cloud-provider/pkg/ipam"
@@ -82,18 +84,7 @@ func (k *kubevipLoadBalancerManager) deleteLoadBalancer(_ context.Context, servi
 	return nil
 }
 
-// syncLoadBalancer
-// 1. Is this loadBalancer already created, and does it have an address? return status
-// 2. Is this a new loadBalancer (with no IP address)
-// 2a. Get all existing kube-vip services
-// 2b. Get the network configuration for this service (namespace) / (CIDR/Range)
-// 2c. Between the two find a free address
-
-func syncLoadBalancer(ctx context.Context, kubeClient kubernetes.Interface, service *v1.Service, cmName, cmNamespace string) (*v1.LoadBalancerStatus, error) {
-	// This function reconciles the load balancer state
-	klog.Infof("syncing service '%s' (%s)", service.Name, service.UID)
-
-	// The loadBalancer address has already been populated
+func checkLegacyLoadBalancerIPAnnotation(ctx context.Context, kubeClient kubernetes.Interface, service *v1.Service) (*v1.LoadBalancerStatus, error) {
 	if service.Spec.LoadBalancerIP != "" {
 		if v, ok := service.Annotations[LoadbalancerIPsAnnotations]; !ok || len(v) == 0 {
 			klog.Warningf("service.Spec.LoadBalancerIP is defined but annotations '%s' is not, assume it's a legacy service, updates its annotations", LoadbalancerIPsAnnotations)
@@ -120,7 +111,27 @@ func syncLoadBalancer(ctx context.Context, kubeClient kubernetes.Interface, serv
 		}
 		return &service.Status.LoadBalancer, nil
 	}
+	return nil, nil
+}
 
+// syncLoadBalancer
+// 1. Is this loadBalancer already created, and does it have an address? return status
+// 2. Is this a new loadBalancer (with no IP address)
+// 2a. Get all existing kube-vip services
+// 2b. Get the network configuration for this service (namespace) / (CIDR/Range)
+// 2c. Between the two find a free address
+
+func syncLoadBalancer(ctx context.Context, kubeClient kubernetes.Interface, service *v1.Service, cmName, cmNamespace string) (*v1.LoadBalancerStatus, error) {
+	// This function reconciles the load balancer state
+	klog.Infof("syncing service '%s' (%s)", service.Name, service.UID)
+
+	// The loadBalancer address has already been populated
+	if status, err := checkLegacyLoadBalancerIPAnnotation(ctx, kubeClient, service); status != nil || err != nil {
+		return status, err
+	}
+
+	// Check if the service already got a LoadbalancerIPsAnnotation,
+	// if so, check if LoadbalancerIPsAnnotation was created by cloud-controller (ImplementationLabelKey == ImplementationLabelValue)
 	if v, ok := service.Annotations[LoadbalancerIPsAnnotations]; ok && len(v) != 0 {
 		klog.Infof("service '%s/%s' annotations '%s' is defined but service.Spec.LoadBalancerIP is not. Assume it's not legacy service", service.Namespace, service.Name, LoadbalancerIPsAnnotations)
 		// Set Label for service lookups
@@ -147,7 +158,7 @@ func syncLoadBalancer(ctx context.Context, kubeClient kubernetes.Interface, serv
 		return &service.Status.LoadBalancer, nil
 	}
 
-	// Get the clound controller configuration map
+	// Get the cloud controller configuration map
 	controllerCM, err := getConfigMap(ctx, kubeClient, cmName, cmNamespace)
 	if err != nil {
 		klog.Errorf("Unable to retrieve kube-vip ipam config from configMap [%s] in %s", cmName, cmNamespace)
@@ -159,7 +170,7 @@ func syncLoadBalancer(ctx context.Context, kubeClient kubernetes.Interface, serv
 	}
 
 	// Get ip pool from configmap and determine if it is namespace specific or global
-	pool, global, err := discoverPool(controllerCM, service.Namespace, cmName)
+	pool, global, allowShare, err := discoverPool(controllerCM, service.Namespace, cmName)
 	if err != nil {
 		return nil, err
 	}
@@ -179,12 +190,41 @@ func syncLoadBalancer(ctx context.Context, kubeClient kubernetes.Interface, serv
 	}
 
 	builder := &netipx.IPSetBuilder{}
+
+	var servicePortMap = map[netip.Addr]*set.Set{}
+
+	// Gather infos about implemented services
 	for x := range svcs.Items {
-		if ip, ok := svcs.Items[x].Annotations[LoadbalancerIPsAnnotations]; ok {
+		var svc = svcs.Items[x]
+		if ip, ok := svc.Annotations[LoadbalancerIPsAnnotations]; ok {
 			addr, err := netip.ParseAddr(ip)
 			if err != nil {
 				return nil, err
 			}
+
+			// Add list of endpoints to search for IPs where the service could fit in
+			if allowShare {
+				if len(svc.Spec.Ports) != 0 {
+					for p := range svc.Spec.Ports {
+						var port = svc.Spec.Ports[p].Port
+
+						hashSet, ok := servicePortMap[addr]
+						if !ok {
+							newHashSet := set.NewHashSet()
+							servicePortMap[addr] = &newHashSet
+							hashSet = servicePortMap[addr]
+						}
+						(*hashSet).Add(port)
+					}
+				} else {
+					// special case, if the services does not define ports
+					klog.Warningf("Service [%s] does not define ports, consider IP %s non-shareble", svc.Name, addr.String())
+					newHashSet := set.NewHashSet(0)
+					servicePortMap[addr] = &newHashSet
+				}
+			}
+
+			// Add to IPSet in case we need to find a new free address
 			builder.Add(addr)
 		}
 	}
@@ -195,10 +235,18 @@ func syncLoadBalancer(ctx context.Context, kubeClient kubernetes.Interface, serv
 
 	descOrder := getSearchOrder(controllerCM)
 
-	// If the LoadBalancer address is empty, then do a local IPAM lookup
-	loadBalancerIPs, err := discoverVIPs(service.Namespace, pool, inUseSet, descOrder, service.Spec.IPFamilyPolicy, service.Spec.IPFamilies)
-	if err != nil {
-		return nil, err
+	loadBalancerIPs := ""
+
+	if allowShare {
+		loadBalancerIPs = discoverSharedVIPs(service, servicePortMap)
+	}
+
+	if loadBalancerIPs == "" {
+		// If the LoadBalancer address is empty, then do a local IPAM lookup
+		loadBalancerIPs, err = discoverVIPs(service.Namespace, pool, inUseSet, descOrder, service.Spec.IPFamilyPolicy, service.Spec.IPFamilies)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Update the services with this new address
@@ -238,45 +286,95 @@ func syncLoadBalancer(ctx context.Context, kubeClient kubernetes.Interface, serv
 	return &service.Status.LoadBalancer, nil
 }
 
-func discoverPool(cm *v1.ConfigMap, namespace, configMapName string) (pool string, global bool, err error) {
-	var cidr, ipRange string
+func getConfigWithNamespace(cm *v1.ConfigMap, namespace, name string) (value, key string, err error) {
 	var ok bool
 
-	// Find Cidr
-	cidrKey := fmt.Sprintf("cidr-%s", namespace)
-	// Lookup current namespace
-	if cidr, ok = cm.Data[cidrKey]; !ok {
-		klog.Info(fmt.Errorf("no cidr config for namespace [%s] exists in key [%s] configmap [%s]", namespace, cidrKey, configMapName))
-		// Lookup global cidr configmap data
-		if cidr, ok = cm.Data["cidr-global"]; !ok {
-			klog.Info(fmt.Errorf("no global cidr config exists [cidr-global]"))
+	key = fmt.Sprintf("%s-%s", name, namespace)
+
+	if value, ok = cm.Data[key]; !ok {
+		return "", key, fmt.Errorf("no config for %s", name)
+	}
+
+	return value, key, nil
+}
+
+func getConfig(cm *v1.ConfigMap, namespace, configMapName, name, what, pool string) (value string, global bool, err error) {
+	var key string
+
+	value, key, err = getConfigWithNamespace(cm, namespace, name)
+	if err != nil {
+		klog.Info(fmt.Errorf("no %s config for namespace [%s] exists in key [%s] configmap [%s]", name, namespace, key, configMapName))
+		value, key, err = getConfigWithNamespace(cm, "global", name)
+		if err != nil {
+			klog.Info(fmt.Errorf("no global %s config exists [%s]", name, key))
 		} else {
-			klog.Infof("Taking address from [cidr-global] pool")
-			return cidr, true, nil
+			klog.Infof("Taking %s from [%s]%s", what, key, pool)
+			return value, true, nil
 		}
 	} else {
-		klog.Infof("Taking address from [%s] pool", cidrKey)
-		return cidr, false, nil
+		klog.Infof("Taking %s from [%s]%s", what, key, pool)
+		return value, false, nil
+	}
+
+	return "", false, fmt.Errorf("no config for %s", name)
+}
+
+func discoverPool(cm *v1.ConfigMap, namespace, configMapName string) (pool string, global bool, allowShare bool, err error) {
+	var cidr, ipRange, allowShareStr string
+
+	// Check for VIP sharing
+	allowShareStr, _, err = getConfig(cm, namespace, configMapName, "allow-share", "config", "")
+	if err == nil {
+		allowShare, _ = strconv.ParseBool(allowShareStr)
+	}
+
+	// Find Cidr
+	cidr, global, err = getConfig(cm, namespace, configMapName, "cidr", "address", " pool")
+	if err == nil {
+		return cidr, global, allowShare, nil
 	}
 
 	// Find Range
-	rangeKey := fmt.Sprintf("range-%s", namespace)
-	// Lookup current namespace
-	if ipRange, ok = cm.Data[rangeKey]; !ok {
-		klog.Info(fmt.Errorf("no range config for namespace [%s] exists in key [%s] configmap [%s]", namespace, rangeKey, configMapName))
-		// Lookup global range configmap data
-		if ipRange, ok = cm.Data["range-global"]; !ok {
-			klog.Info(fmt.Errorf("no global range config exists [range-global]"))
-		} else {
-			klog.Infof("Taking address from [range-global] pool")
-			return ipRange, true, nil
-		}
-	} else {
-		klog.Infof("Taking address from [%s] pool", rangeKey)
-		return ipRange, false, nil
+	ipRange, global, err = getConfig(cm, namespace, configMapName, "range", "address", " pool")
+	if err == nil {
+		return ipRange, global, allowShare, nil
 	}
 
-	return "", false, fmt.Errorf("no address pools could be found")
+	return "", false, allowShare, fmt.Errorf("no address pools could be found")
+}
+
+// Multiplex addresses:
+// 1. get all used VipEndpoints (addr and port)
+// 2. build usedIpset
+// 3. find an IP in usedIps where the requested VipEndpoints are available
+//		if found: assign this IP and return. Services without a Ports account for the whole IP
+//		if not: find new free IP from Range and assign it
+
+func discoverSharedVIPs(service *v1.Service, servicePortMap map[netip.Addr]*set.Set) (vips string) {
+	servicePorts := set.NewHashSet()
+	for p := range service.Spec.Ports {
+		servicePorts.Add(service.Spec.Ports[p].Port)
+	}
+
+	for addr := range servicePortMap {
+		portSet := *servicePortMap[addr]
+		if portSet.Contains(0) {
+			continue
+		}
+		intersect := servicePorts.Intersection(portSet)
+		if intersect.Len() == 0 {
+			klog.Infof("Share service [%s] ports %s, with address [%s] ports %s",
+				service.Name,
+				fmt.Sprint(servicePorts.ToSlice()),
+				addr.String(),
+				fmt.Sprint(portSet.ToSlice()),
+			)
+			// All requested ports are free on this IP
+			return addr.String()
+		}
+	}
+
+	return ""
 }
 
 func discoverVIPs(
