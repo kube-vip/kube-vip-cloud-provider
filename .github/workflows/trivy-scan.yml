@@ -20,7 +20,7 @@ jobs:
     permissions:
       security-events: write
     steps:
-      - uses: actions/checkout@4
+      - uses: actions/checkout@v4
         with:
           persist-credentials: false
           ref: ${{ matrix.branch }}
@@ -32,6 +32,6 @@ jobs:
           output: 'trivy-results.sarif'
           ignore-unfixed: true
           severity: 'HIGH,CRITICAL'
-      - uses: github/codeql-action/upload-sarif@3
+      - uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: 'trivy-results.sarif'
