@@ -155,7 +155,7 @@ func FindAvailableHostFromCidr(namespace, cidr string, inUseIPSet *netipx.IPSet,
 func FindFreeAddress(poolIPSet *netipx.IPSet, inUseIPSet *netipx.IPSet, descOrder bool) (netip.Addr, error) {
 	if descOrder {
 		ipranges := poolIPSet.Ranges()
-		for i := range len(ipranges) - 1 {
+		for i := range len(ipranges) {
 			iprange := ipranges[len(ipranges)-1-i]
 			ip := iprange.To()
 			for {
