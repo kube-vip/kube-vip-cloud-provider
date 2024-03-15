@@ -202,7 +202,7 @@ func syncLoadBalancer(ctx context.Context, kubeClient kubernetes.Interface, serv
 				return nil, err
 			}
 
-			// Add list of endpoints to search for IPs where the service could fit in
+			// Store service port mapping to help decide whether services could share the same IP.
 			if allowShare {
 				if len(svc.Spec.Ports) != 0 {
 					for p := range svc.Spec.Ports {
@@ -242,7 +242,7 @@ func syncLoadBalancer(ctx context.Context, kubeClient kubernetes.Interface, serv
 	}
 
 	if loadBalancerIPs == "" {
-		// If the LoadBalancer address is empty, then do a local IPAM lookup
+		// If allowedShare is true but no IP could be shared, or allowedShare is false, switch to use IPAM lookup
 		loadBalancerIPs, err = discoverVIPs(service.Namespace, pool, inUseSet, descOrder, service.Spec.IPFamilyPolicy, service.Spec.IPFamilies)
 		if err != nil {
 			return nil, err

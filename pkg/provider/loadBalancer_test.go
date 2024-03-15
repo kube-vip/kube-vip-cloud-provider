@@ -79,7 +79,7 @@ func Test_DiscoveryPoolCIDR(t *testing.T) {
 				t.Errorf("discoverPool() returned: %s : %v, expected: %s : %v", gotString, gotBool, tt.want, tt.wantBool)
 			}
 			if allowShare != tt.allowShare {
-				t.Errorf("discoverPool() has invalid allowShared. expected: %v, got %v", tt.allowShare, allowShare)
+				t.Errorf("discoverPool() has invalid allowShare. expected: %v, got %v", tt.allowShare, allowShare)
 			}
 		})
 	}
