@@ -298,7 +298,7 @@ func getConfigWithNamespace(cm *v1.ConfigMap, namespace, name string) (value, ke
 	return value, key, nil
 }
 
-func getConfig(cm *v1.ConfigMap, namespace, configMapName, name, what, pool string) (value string, global bool, err error) {
+func getConfig(cm *v1.ConfigMap, namespace, configMapName, name, configType string) (value string, global bool, err error) {
 	var key string
 
 	value, key, err = getConfigWithNamespace(cm, namespace, name)
@@ -308,11 +308,11 @@ func getConfig(cm *v1.ConfigMap, namespace, configMapName, name, what, pool stri
 		if err != nil {
 			klog.Info(fmt.Errorf("no global %s config exists [%s]", name, key))
 		} else {
-			klog.Infof("Taking %s from [%s]%s", what, key, pool)
+			klog.Infof("Taking %s from [%s]", configType, key)
 			return value, true, nil
 		}
 	} else {
-		klog.Infof("Taking %s from [%s]%s", what, key, pool)
+		klog.Infof("Taking %s from [%s]", configType, key)
 		return value, false, nil
 	}
 
@@ -323,19 +323,19 @@ func discoverPool(cm *v1.ConfigMap, namespace, configMapName string) (pool strin
 	var cidr, ipRange, allowShareStr string
 
 	// Check for VIP sharing
-	allowShareStr, _, err = getConfig(cm, namespace, configMapName, "allow-share", "config", "")
+	allowShareStr, _, err = getConfig(cm, namespace, configMapName, "allow-share", "config")
 	if err == nil {
 		allowShare, _ = strconv.ParseBool(allowShareStr)
 	}
 
 	// Find Cidr
-	cidr, global, err = getConfig(cm, namespace, configMapName, "cidr", "address", " pool")
+	cidr, global, err = getConfig(cm, namespace, configMapName, "cidr", "address")
 	if err == nil {
 		return cidr, global, allowShare, nil
 	}
 
 	// Find Range
-	ipRange, global, err = getConfig(cm, namespace, configMapName, "range", "address", " pool")
+	ipRange, global, err = getConfig(cm, namespace, configMapName, "range", "address")
 	if err == nil {
 		return ipRange, global, allowShare, nil
 	}
