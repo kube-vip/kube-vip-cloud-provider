@@ -2,7 +2,7 @@ package provider
 
 import (
 	"context"
-	core "k8s.io/client-go/testing"
+	clientgotesting "k8s.io/client-go/testing"
 	"testing"
 	"time"
 
@@ -240,11 +240,11 @@ func TestSyncLoadBalancerIfNeededWithMultipleIpUse(t *testing.T) {
 			lbIP := ""
 			for _, action := range actions {
 				switch a := action.(type) {
-				case core.UpdateActionImpl:
+				case clientgotesting.UpdateActionImpl:
 					s := a.Object.(*corev1.Service)
 					lbIP = s.ObjectMeta.Annotations["kube-vip.io/loadbalancerIPs"]
 					updateNum++
-				case core.PatchActionImpl:
+				case clientgotesting.PatchActionImpl:
 					patchNum++
 				}
 			}
