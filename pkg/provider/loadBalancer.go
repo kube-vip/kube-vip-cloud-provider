@@ -3,7 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
-	"github.com/billryan/collections/set"
+	"k8s.io/utils/set"
 	"net/netip"
 	"strconv"
 	"strings"
@@ -191,7 +191,7 @@ func syncLoadBalancer(ctx context.Context, kubeClient kubernetes.Interface, serv
 
 	builder := &netipx.IPSetBuilder{}
 
-	var servicePortMap = map[netip.Addr]*set.Set{}
+	var servicePortMap = map[netip.Addr]*set.Set[int32]{}
 
 	// Gather infos about implemented services
 	for x := range svcs.Items {
@@ -208,19 +208,20 @@ func syncLoadBalancer(ctx context.Context, kubeClient kubernetes.Interface, serv
 					for p := range svc.Spec.Ports {
 						var port = svc.Spec.Ports[p].Port
 
-						hashSet, ok := servicePortMap[addr]
+						portSet, ok := servicePortMap[addr]
 						if !ok {
-							newHashSet := set.NewHashSet()
-							servicePortMap[addr] = &newHashSet
-							hashSet = servicePortMap[addr]
+							newSet := set.New[int32]()
+							servicePortMap[addr] = &newSet
+							portSet = servicePortMap[addr]
 						}
-						(*hashSet).Add(port)
+						portSet.Insert(port)
 					}
 				} else {
 					// special case, if the services does not define ports
 					klog.Warningf("Service [%s] does not define ports, consider IP %s non-shareble", svc.Name, addr.String())
-					newHashSet := set.NewHashSet(0)
-					servicePortMap[addr] = &newHashSet
+
+					newSet := set.New[int32](0)
+					servicePortMap[addr] = &newSet
 				}
 			}
 
@@ -350,24 +351,25 @@ func discoverPool(cm *v1.ConfigMap, namespace, configMapName string) (pool strin
 //		if found: assign this IP and return. Services without a Ports account for the whole IP
 //		if not: find new free IP from Range and assign it
 
-func discoverSharedVIPs(service *v1.Service, servicePortMap map[netip.Addr]*set.Set) (vips string) {
-	servicePorts := set.NewHashSet()
+func discoverSharedVIPs(service *v1.Service, servicePortMap map[netip.Addr]*set.Set[int32]) (vips string) {
+	servicePorts := set.New[int32]()
 	for p := range service.Spec.Ports {
-		servicePorts.Add(service.Spec.Ports[p].Port)
+		servicePorts.Insert(service.Spec.Ports[p].Port)
 	}
 
 	for addr := range servicePortMap {
-		portSet := *servicePortMap[addr]
-		if portSet.Contains(0) {
+		portSet := servicePortMap[addr]
+		if portSet.Has(0) {
 			continue
 		}
-		intersect := servicePorts.Intersection(portSet)
+
+		intersect := servicePorts.Intersection(*portSet)
 		if intersect.Len() == 0 {
 			klog.Infof("Share service [%s] ports %s, with address [%s] ports %s",
 				service.Name,
-				fmt.Sprint(servicePorts.ToSlice()),
+				fmt.Sprint(servicePorts),
 				addr.String(),
-				fmt.Sprint(portSet.ToSlice()),
+				fmt.Sprint(portSet),
 			)
 			// All requested ports are free on this IP
 			return addr.String()
