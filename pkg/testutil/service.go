@@ -20,7 +20,7 @@ func NewService(name string, tweaks ...ServiceTweak) *corev1.Service {
 		},
 		Spec: corev1.ServiceSpec{
 			Type:  corev1.ServiceTypeLoadBalancer,
-			Ports: makeServicePort(corev1.ProtocolTCP, 0),
+			Ports: makeServicePort(corev1.ProtocolTCP, 80, 0),
 		},
 	}
 	for _, tw := range tweaks {
@@ -50,16 +50,8 @@ func TweakAddLBIngress(ip string) ServiceTweak {
 	}
 }
 
-func makeServicePort(protocol corev1.Protocol, targetPort int) []corev1.ServicePort {
-	sp := corev1.ServicePort{Port: 80, Protocol: protocol}
-	if targetPort > 0 {
-		sp.TargetPort = intstr.FromInt32(int32(targetPort))
-	}
-	return []corev1.ServicePort{sp}
-}
-
-func makeServicePort2(protocol corev1.Protocol, targetPort int, servicePort int32) []corev1.ServicePort {
-	sp := corev1.ServicePort{Port: servicePort, Protocol: protocol}
+func makeServicePort(protocol corev1.Protocol, sourcePort, targetPort int) []corev1.ServicePort {
+	sp := corev1.ServicePort{Port: int32(sourcePort), Protocol: protocol}
 	if targetPort > 0 {
 		sp.TargetPort = intstr.FromInt32(int32(targetPort))
 	}
@@ -67,15 +59,9 @@ func makeServicePort2(protocol corev1.Protocol, targetPort int, servicePort int3
 }
 
 // TweakAddPorts returns a func that changes the ServicePort of a service
-func TweakAddPorts(protocol corev1.Protocol, targetPort int) ServiceTweak {
+func TweakAddPorts(protocol corev1.Protocol, sourcePort, targetPort int) ServiceTweak {
 	return func(s *corev1.Service) {
-		s.Spec.Ports = makeServicePort(protocol, targetPort)
-	}
-}
-
-func TweakAddPorts2(protocol corev1.Protocol, sourcePort int32, targetPort int) ServiceTweak {
-	return func(s *corev1.Service) {
-		s.Spec.Ports = makeServicePort2(protocol, targetPort, sourcePort)
+		s.Spec.Ports = makeServicePort(protocol, sourcePort, targetPort)
 	}
 }
 

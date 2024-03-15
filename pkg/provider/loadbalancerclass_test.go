@@ -64,7 +64,7 @@ func TestSyncLoadBalancerIfNeeded(t *testing.T) {
 	}{
 		{
 			desc:              "udp service that wants LB",
-			service:           tu.NewService("udp-service", tu.TweakAddPorts(corev1.ProtocolUDP, 0), tu.TweakAddLBClass(ptr.To(LoadbalancerClass))),
+			service:           tu.NewService("udp-service", tu.TweakAddPorts(corev1.ProtocolUDP, 80, 0), tu.TweakAddLBClass(ptr.To(LoadbalancerClass))),
 			expectNumOfUpdate: 1,
 			expectNumOfPatch:  1,
 		},
@@ -76,7 +76,7 @@ func TestSyncLoadBalancerIfNeeded(t *testing.T) {
 		},
 		{
 			desc:              "sctp service that wants LB",
-			service:           tu.NewService("sctp-service", tu.TweakAddPorts(corev1.ProtocolSCTP, 0), tu.TweakAddLBClass(ptr.To(LoadbalancerClass))),
+			service:           tu.NewService("sctp-service", tu.TweakAddPorts(corev1.ProtocolSCTP, 80, 0), tu.TweakAddLBClass(ptr.To(LoadbalancerClass))),
 			expectNumOfUpdate: 1,
 			expectNumOfPatch:  1,
 		},
@@ -165,21 +165,21 @@ func TestSyncLoadBalancerIfNeededWithMultipleIpUse(t *testing.T) {
 	}{
 		{
 			desc:              "udp service that wants LB",
-			service:           tu.NewService("udp-service", tu.TweakAddPorts2(corev1.ProtocolUDP, 123, 123), tu.TweakAddLBClass(ptr.To(LoadbalancerClass))),
+			service:           tu.NewService("udp-service", tu.TweakAddPorts(corev1.ProtocolUDP, 123, 123), tu.TweakAddLBClass(ptr.To(LoadbalancerClass))),
 			expectIP:          "10.0.0.1",
 			expectNumOfUpdate: 1,
 			expectNumOfPatch:  1,
 		},
 		{
 			desc:              "tcp service that wants LB",
-			service:           tu.NewService("basic-service1", tu.TweakAddPorts2(corev1.ProtocolTCP, 345, 345), tu.TweakAddLBClass(ptr.To(LoadbalancerClass))),
+			service:           tu.NewService("basic-service1", tu.TweakAddPorts(corev1.ProtocolTCP, 345, 345), tu.TweakAddLBClass(ptr.To(LoadbalancerClass))),
 			expectIP:          "10.0.0.1",
 			expectNumOfUpdate: 1,
 			expectNumOfPatch:  1,
 		},
 		{
 			desc:              "sctp service that wants LB",
-			service:           tu.NewService("sctp-service", tu.TweakAddPorts2(corev1.ProtocolSCTP, 1234, 1234), tu.TweakAddLBClass(ptr.To(LoadbalancerClass))),
+			service:           tu.NewService("sctp-service", tu.TweakAddPorts(corev1.ProtocolSCTP, 1234, 1234), tu.TweakAddLBClass(ptr.To(LoadbalancerClass))),
 			expectIP:          "10.0.0.1",
 			expectNumOfUpdate: 1,
 			expectNumOfPatch:  1,
@@ -204,7 +204,7 @@ func TestSyncLoadBalancerIfNeededWithMultipleIpUse(t *testing.T) {
 		},
 		{
 			desc:              "another tcp service that wants LB",
-			service:           tu.NewService("basic-service4", tu.TweakAddPorts2(corev1.ProtocolTCP, 80, 80), tu.TweakAddLBClass(ptr.To(LoadbalancerClass))),
+			service:           tu.NewService("basic-service4", tu.TweakAddPorts(corev1.ProtocolTCP, 80, 80), tu.TweakAddLBClass(ptr.To(LoadbalancerClass))),
 			expectNumOfUpdate: 0,
 			expectNumOfPatch:  1,
 			expectError:       true,
@@ -271,8 +271,8 @@ func TestNeedsUpdate(t *testing.T) {
 		{
 			desc: "udp service that wants LB change protocol port",
 			service: []*corev1.Service{
-				tu.NewService("udp-service", tu.TweakAddPorts(corev1.ProtocolUDP, 0)),
-				tu.NewService("udp-service", tu.TweakAddPorts(corev1.ProtocolUDP, 1)),
+				tu.NewService("udp-service", tu.TweakAddPorts(corev1.ProtocolUDP, 80, 0)),
+				tu.NewService("udp-service", tu.TweakAddPorts(corev1.ProtocolUDP, 80, 1)),
 			},
 			expect: true,
 		},
