@@ -429,25 +429,25 @@ func discoverVIPsSingleStack(namespace, ipv4Pool, ipv6Pool string, preferredIpv4
 }
 
 func discoverFromPool(namespace, pool, preferredIpv4ServiceIP, ipv4Pool string, inUseIPSet *netipx.IPSet, descOrder bool, vipList *[]string) (poolError, err error) {
-	if len(pool) > 0 {
-		var vip string
-		if pool == ipv4Pool && len(preferredIpv4ServiceIP) > 0 {
-			vip = preferredIpv4ServiceIP
-		} else {
-			vip, err = discoverAddress(namespace, pool, inUseIPSet, descOrder)
-		}
-
-		if err == nil {
-			*vipList = append(*vipList, vip)
-			return nil, nil
-		} else if _, outOfIPs := err.(*ipam.OutOfIPsError); outOfIPs {
-			poolError = err
-			return poolError, nil
-		} else {
-			return nil, err
-		}
+	if len(pool) == 0 {
+		return nil, nil
 	}
-	return nil, nil
+
+	var vip string
+	if pool == ipv4Pool && len(preferredIpv4ServiceIP) > 0 {
+		vip = preferredIpv4ServiceIP
+	} else {
+		vip, err = discoverAddress(namespace, pool, inUseIPSet, descOrder)
+	}
+
+	if err == nil {
+		*vipList = append(*vipList, vip)
+		return nil, nil
+	} else if _, outOfIPs := err.(*ipam.OutOfIPsError); outOfIPs {
+		poolError = err
+		return poolError, nil
+	}
+	return nil, err
 }
 
 func discoverVIPsDualStack(namespace, ipv4Pool, ipv6Pool string, preferredIpv4ServiceIP string, inUseIPSet *netipx.IPSet, descOrder bool,
