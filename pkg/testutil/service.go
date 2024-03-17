@@ -106,3 +106,14 @@ func TweakSetLoadbalancerIP(ip string) ServiceTweak {
 		s.Spec.LoadBalancerIP = ip
 	}
 }
+
+func ipFamilyPolicyPtr(p corev1.IPFamilyPolicy) *corev1.IPFamilyPolicy {
+	return &p
+}
+
+func TweakDualStack() ServiceTweak {
+	return func(s *corev1.Service) {
+		s.Spec.IPFamilyPolicy = ipFamilyPolicyPtr(corev1.IPFamilyPolicyRequireDualStack)
+		s.Spec.IPFamilies = []corev1.IPFamily{corev1.IPv4Protocol, corev1.IPv6Protocol}
+	}
+}

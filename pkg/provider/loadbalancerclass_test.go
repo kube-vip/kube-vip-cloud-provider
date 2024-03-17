@@ -147,7 +147,7 @@ func newSmallIPPoolConfigMap() *corev1.ConfigMap {
 			Namespace: KubeVipClientConfigNamespace,
 		},
 		Data: map[string]string{
-			"cidr-global":        "10.0.0.0/30",
+			"cidr-global":        "10.0.0.0/30,2001::0/48",
 			"allow-share-global": "true",
 		},
 	}
@@ -164,15 +164,15 @@ func TestSyncLoadBalancerIfNeededWithMultipleIpUse(t *testing.T) {
 	}{
 		{
 			desc:              "udp service that wants LB",
-			service:           tu.NewService("udp-service", tu.TweakAddPorts(corev1.ProtocolUDP, 123, 123), tu.TweakAddLBClass(ptr.To(LoadbalancerClass))),
-			expectIP:          "10.0.0.1",
+			service:           tu.NewService("udp-service", tu.TweakDualStack(), tu.TweakAddPorts(corev1.ProtocolUDP, 123, 123), tu.TweakAddLBClass(ptr.To(LoadbalancerClass))),
+			expectIP:          "10.0.0.1,2001::",
 			expectNumOfUpdate: 1,
 			expectNumOfPatch:  1,
 		},
 		{
 			desc:              "tcp service that wants LB",
-			service:           tu.NewService("basic-service1", tu.TweakAddPorts(corev1.ProtocolTCP, 345, 345), tu.TweakAddLBClass(ptr.To(LoadbalancerClass))),
-			expectIP:          "10.0.0.1",
+			service:           tu.NewService("basic-service1", tu.TweakDualStack(), tu.TweakAddPorts(corev1.ProtocolTCP, 345, 345), tu.TweakAddLBClass(ptr.To(LoadbalancerClass))),
+			expectIP:          "10.0.0.1,2001::1",
 			expectNumOfUpdate: 1,
 			expectNumOfPatch:  1,
 		},

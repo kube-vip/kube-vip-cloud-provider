@@ -326,10 +326,11 @@ func ipFamilyPolicyPtr(p v1.IPFamilyPolicy) *v1.IPFamilyPolicy {
 
 func Test_discoverVIPs(t *testing.T) {
 	type args struct {
-		ipFamilyPolicy     *v1.IPFamilyPolicy
-		ipFamilies         []v1.IPFamily
-		pool               string
-		existingServiceIPS []string
+		ipFamilyPolicy         *v1.IPFamilyPolicy
+		ipFamilies             []v1.IPFamily
+		pool                   string
+		preferredIpv4ServiceIP string
+		existingServiceIPS     []string
 	}
 
 	tests := []struct {
@@ -358,6 +359,18 @@ func Test_discoverVIPs(t *testing.T) {
 				existingServiceIPS: []string{"10.10.10.8", "10.10.10.9", "10.10.10.10", "10.10.10.12"},
 			},
 			want:    "10.10.10.11",
+			wantErr: false,
+		},
+		{
+			name: "IPv4 pool with preferred IP",
+			args: args{
+				ipFamilyPolicy:         ipFamilyPolicyPtr(v1.IPFamilyPolicySingleStack),
+				ipFamilies:             []v1.IPFamily{v1.IPv4Protocol},
+				pool:                   "10.10.10.8-10.10.10.15",
+				preferredIpv4ServiceIP: "10.10.10.9",
+				existingServiceIPS:     []string{"10.10.10.8", "10.10.10.9", "10.10.10.10", "10.10.10.12"},
+			},
+			want:    "10.10.10.9",
 			wantErr: false,
 		},
 		{
@@ -414,6 +427,18 @@ func Test_discoverVIPs(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "IPv4 pool with PreferDualStack service and preferred IPv4 service IP",
+			args: args{
+				ipFamilyPolicy:         ipFamilyPolicyPtr(v1.IPFamilyPolicyPreferDualStack),
+				ipFamilies:             []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol},
+				pool:                   "10.10.10.8-10.10.10.15",
+				preferredIpv4ServiceIP: "10.10.10.10",
+				existingServiceIPS:     []string{"10.10.10.8", "10.10.10.9", "10.10.10.10", "10.10.10.12"},
+			},
+			want:    "10.10.10.10",
+			wantErr: false,
+		},
+		{
 			name: "IPv6 pool with PreferDualStack service",
 			args: args{
 				ipFamilyPolicy:     ipFamilyPolicyPtr(v1.IPFamilyPolicyPreferDualStack),
@@ -449,6 +474,30 @@ func Test_discoverVIPs(t *testing.T) {
 				ipFamilyPolicy: ipFamilyPolicyPtr(v1.IPFamilyPolicyPreferDualStack),
 				ipFamilies:     []v1.IPFamily{v1.IPv6Protocol, v1.IPv4Protocol},
 				pool:           "10.10.10.8-10.10.10.15,fd00::1-fd00::10",
+			},
+			want:    "fd00::1,10.10.10.8",
+			wantErr: false,
+		},
+		{
+			name: "dualstack pool with PreferDualStack IPv4,IPv6 service and preferred IPv4 service IP",
+			args: args{
+				ipFamilyPolicy:         ipFamilyPolicyPtr(v1.IPFamilyPolicyPreferDualStack),
+				ipFamilies:             []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol},
+				pool:                   "10.10.10.8-10.10.10.15,fd00::1-fd00::10",
+				existingServiceIPS:     []string{"10.10.10.8", "10.10.10.9", "10.10.10.10", "10.10.10.12"},
+				preferredIpv4ServiceIP: "10.10.10.8",
+			},
+			want:    "10.10.10.8,fd00::1",
+			wantErr: false,
+		},
+		{
+			name: "dualstack pool with PreferDualStack IPv6,IPv4 service and preferred IPv4 service IP",
+			args: args{
+				ipFamilyPolicy:         ipFamilyPolicyPtr(v1.IPFamilyPolicyPreferDualStack),
+				ipFamilies:             []v1.IPFamily{v1.IPv6Protocol, v1.IPv4Protocol},
+				pool:                   "10.10.10.8-10.10.10.15,fd00::1-fd00::10",
+				existingServiceIPS:     []string{"10.10.10.8", "10.10.10.9", "10.10.10.10", "10.10.10.12"},
+				preferredIpv4ServiceIP: "10.10.10.8",
 			},
 			want:    "fd00::1,10.10.10.8",
 			wantErr: false,
@@ -643,7 +692,7 @@ func Test_discoverVIPs(t *testing.T) {
 				return
 			}
 
-			gotString, err := discoverVIPs("discover-vips-test-ns", tt.args.pool, s, false, tt.args.ipFamilyPolicy, tt.args.ipFamilies)
+			gotString, err := discoverVIPs("discover-vips-test-ns", tt.args.pool, tt.args.preferredIpv4ServiceIP, s, false, tt.args.ipFamilyPolicy, tt.args.ipFamilies)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("discoverVIP() error: %v, expected: %v", err, tt.wantErr)
 				return

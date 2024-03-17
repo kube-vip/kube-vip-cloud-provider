@@ -114,6 +114,77 @@ func checkLegacyLoadBalancerIPAnnotation(ctx context.Context, kubeClient kuberne
 	return nil, nil
 }
 
+func parseAddrList(inputString string) (addrs []netip.Addr, err error) {
+	addrStringList := strings.Split(inputString, ",")
+	var addrList []netip.Addr
+
+	for i := range addrStringList {
+		addrString := addrStringList[i]
+		addr, err := netip.ParseAddr(addrString)
+		if err != nil {
+			return nil, err
+		}
+		addrList = append(addrList, addr)
+	}
+
+	return addrList, nil
+}
+
+// Gather infos about implemented services
+func mapImplementedServices(svcs *v1.ServiceList, mapSharedIpv4 bool) (inUseSet *netipx.IPSet, servicePortMap map[string]*set.Set[int32], err error) {
+
+	builder := &netipx.IPSetBuilder{}
+	servicePortMap = map[string]*set.Set[int32]{}
+
+	for x := range svcs.Items {
+		var svc = svcs.Items[x]
+
+		if ips, ok := svc.Annotations[LoadbalancerIPsAnnotations]; ok {
+			addrs, err := parseAddrList(ips)
+			if err != nil {
+				return nil, nil, err
+			}
+
+			for a := range addrs {
+				addr := addrs[a]
+				ip := addr.String()
+
+				// Store service port mapping to help decide whether services could share the same IP.
+				if mapSharedIpv4 && addr.Is4() {
+					if len(svc.Spec.Ports) != 0 {
+						for p := range svc.Spec.Ports {
+							var port = svc.Spec.Ports[p].Port
+
+							portSet, ok := servicePortMap[ip]
+							if !ok {
+								newSet := set.New[int32]()
+								servicePortMap[ip] = &newSet
+								portSet = servicePortMap[ip]
+							}
+							portSet.Insert(port)
+						}
+					} else {
+						// special case, if the services does not define ports
+						klog.Warningf("Service [%s] does not define ports, consider IP %s non-shareble", svc.Name, ip)
+
+						newSet := set.New[int32](0)
+						servicePortMap[ip] = &newSet
+					}
+				}
+
+				// Add to IPSet in case we need to find a new free address
+				builder.Add(addr)
+			}
+		}
+	}
+	inUseSet, err = builder.IPSet()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return inUseSet, servicePortMap, nil
+}
+
 // syncLoadBalancer
 // 1. Is this loadBalancer already created, and does it have an address? return status
 // 2. Is this a new loadBalancer (with no IP address)
@@ -175,79 +246,35 @@ func syncLoadBalancer(ctx context.Context, kubeClient kubernetes.Interface, serv
 		return nil, err
 	}
 
-	// Get all services in this namespace or globally, that have the correct label
-	var svcs *v1.ServiceList
-	if global {
-		svcs, err = kubeClient.CoreV1().Services("").List(ctx, metav1.ListOptions{LabelSelector: getKubevipImplementationLabel()})
-		if err != nil {
-			return &service.Status.LoadBalancer, err
-		}
-	} else {
-		svcs, err = kubeClient.CoreV1().Services(service.Namespace).List(ctx, metav1.ListOptions{LabelSelector: getKubevipImplementationLabel()})
+	var serviceNamespace = ""
+	if !global {
+		serviceNamespace = service.Namespace
+	}
+
+	svcs, err := kubeClient.CoreV1().Services(serviceNamespace).List(ctx, metav1.ListOptions{LabelSelector: getKubevipImplementationLabel()})
+	if err != nil {
 		if err != nil {
 			return &service.Status.LoadBalancer, err
 		}
 	}
 
-	builder := &netipx.IPSetBuilder{}
-
-	var servicePortMap = map[string]*set.Set[int32]{}
-
-	// Gather infos about implemented services
-	for x := range svcs.Items {
-		var svc = svcs.Items[x]
-		if ip, ok := svc.Annotations[LoadbalancerIPsAnnotations]; ok {
-			addr, err := netip.ParseAddr(ip)
-			if err != nil {
-				return nil, err
-			}
-
-			// Store service port mapping to help decide whether services could share the same IP.
-			if allowShare {
-				if len(svc.Spec.Ports) != 0 {
-					for p := range svc.Spec.Ports {
-						var port = svc.Spec.Ports[p].Port
-
-						portSet, ok := servicePortMap[ip]
-						if !ok {
-							newSet := set.New[int32]()
-							servicePortMap[ip] = &newSet
-							portSet = servicePortMap[ip]
-						}
-						portSet.Insert(port)
-					}
-				} else {
-					// special case, if the services does not define ports
-					klog.Warningf("Service [%s] does not define ports, consider IP %s non-shareble", svc.Name, ip)
-
-					newSet := set.New[int32](0)
-					servicePortMap[ip] = &newSet
-				}
-			}
-
-			// Add to IPSet in case we need to find a new free address
-			builder.Add(addr)
-		}
-	}
-	inUseSet, err := builder.IPSet()
+	inUseSet, servicePortMap, err := mapImplementedServices(svcs, allowShare)
 	if err != nil {
 		return nil, err
 	}
 
 	descOrder := getSearchOrder(controllerCM)
 
-	loadBalancerIPs := ""
+	preferredIpv4ServiceIP := ""
 
 	if allowShare {
-		loadBalancerIPs = discoverSharedVIPs(service, servicePortMap)
+		preferredIpv4ServiceIP = discoverSharedVIPs(service, servicePortMap)
 	}
 
-	if loadBalancerIPs == "" {
-		// If allowedShare is true but no IP could be shared, or allowedShare is false, switch to use IPAM lookup
-		loadBalancerIPs, err = discoverVIPs(service.Namespace, pool, inUseSet, descOrder, service.Spec.IPFamilyPolicy, service.Spec.IPFamilies)
-		if err != nil {
-			return nil, err
-		}
+	// If allowedShare is true but no IP could be shared, or allowedShare is false, switch to use IPAM lookup
+	loadBalancerIPs, err := discoverVIPs(service.Namespace, pool, preferredIpv4ServiceIP, inUseSet, descOrder, service.Spec.IPFamilyPolicy, service.Spec.IPFamilies)
+	if err != nil {
+		return nil, err
 	}
 
 	// Update the services with this new address
@@ -379,8 +406,109 @@ func discoverSharedVIPs(service *v1.Service, servicePortMap map[string]*set.Set[
 	return ""
 }
 
+func discoverVIPsSingleStack(namespace, ipv4Pool, ipv6Pool string, preferredIpv4ServiceIP string, inUseIPSet *netipx.IPSet, descOrder bool,
+	ipFamilies []v1.IPFamily) (vips string, err error) {
+
+	ipPool := ipv4Pool
+	if len(ipFamilies) == 0 {
+		if len(ipv4Pool) == 0 {
+			ipPool = ipv6Pool
+		}
+	} else if ipFamilies[0] == v1.IPv6Protocol {
+		ipPool = ipv6Pool
+	}
+	if len(ipPool) == 0 {
+		return "", fmt.Errorf("could not find suitable pool for the IP family of the service")
+	}
+	if ipPool == ipv4Pool && len(preferredIpv4ServiceIP) > 0 {
+		return preferredIpv4ServiceIP, nil
+	}
+	return discoverAddress(namespace, ipPool, inUseIPSet, descOrder)
+
+}
+
+func discoverFromPool(namespace, pool, preferredIpv4ServiceIP, ipv4Pool string, inUseIPSet *netipx.IPSet, descOrder bool, vipList *[]string) (poolError, err error) {
+	if len(pool) > 0 {
+		var vip string
+		if pool == ipv4Pool && len(preferredIpv4ServiceIP) > 0 {
+			vip = preferredIpv4ServiceIP
+		} else {
+			vip, err = discoverAddress(namespace, pool, inUseIPSet, descOrder)
+		}
+
+		if err == nil {
+			*vipList = append(*vipList, vip)
+			return nil, nil
+		} else if _, outOfIPs := err.(*ipam.OutOfIPsError); outOfIPs {
+			poolError = err
+			return poolError, nil
+		} else {
+			return nil, err
+		}
+	}
+	return nil, nil
+}
+
+func discoverVIPsDualStack(namespace, ipv4Pool, ipv6Pool string, preferredIpv4ServiceIP string, inUseIPSet *netipx.IPSet, descOrder bool,
+	ipFamilyPolicy *v1.IPFamilyPolicy, ipFamilies []v1.IPFamily) (vips string, err error) {
+
+	var vipList []string
+
+	if *ipFamilyPolicy == v1.IPFamilyPolicyRequireDualStack {
+		// With RequireDualStack, we want to make sure both pools with both IP
+		// families exist
+		if len(ipv4Pool) == 0 || len(ipv6Pool) == 0 {
+			return "", fmt.Errorf("service requires dual-stack, but the configuration does not have both IPv4 and IPv6 pools listed for the namespace")
+		}
+	}
+
+	// Choose pool order
+	primaryPool := ipv4Pool
+	secondaryPool := ipv6Pool
+	if len(ipFamilies) > 0 && ipFamilies[0] == v1.IPv6Protocol {
+		primaryPool = ipv6Pool
+		secondaryPool = ipv4Pool
+	}
+
+	// Provide VIPs from both IP families if possible (guaranteed if RequireDualStack)
+	var primaryPoolErr, secondaryPoolErr error
+
+	if len(primaryPool) > 0 {
+		primaryPoolErr, err = discoverFromPool(namespace, primaryPool, preferredIpv4ServiceIP, ipv4Pool, inUseIPSet, descOrder, &vipList)
+		if err != nil {
+			return "", err
+		}
+	}
+
+	if len(secondaryPool) > 0 {
+		secondaryPoolErr, err = discoverFromPool(namespace, secondaryPool, preferredIpv4ServiceIP, ipv4Pool, inUseIPSet, descOrder, &vipList)
+		if err != nil {
+			return "", err
+		}
+	}
+
+	if *ipFamilyPolicy == v1.IPFamilyPolicyPreferDualStack {
+		if primaryPoolErr != nil && secondaryPoolErr != nil {
+			return "", fmt.Errorf("could not allocate any IP address for PreferDualStack service: %s", renderErrors(primaryPoolErr, secondaryPoolErr))
+		}
+		singleError := primaryPoolErr
+		if secondaryPoolErr != nil {
+			singleError = secondaryPoolErr
+		}
+		if singleError != nil {
+			klog.Warningf("PreferDualStack service will be single-stack because of error: %s", singleError)
+		}
+	} else if *ipFamilyPolicy == v1.IPFamilyPolicyRequireDualStack {
+		if primaryPoolErr != nil || secondaryPoolErr != nil {
+			return "", fmt.Errorf("could not allocate required IP addresses for RequireDualStack service: %s", renderErrors(primaryPoolErr, secondaryPoolErr))
+		}
+	}
+
+	return strings.Join(vipList, ","), nil
+}
+
 func discoverVIPs(
-	namespace, pool string, inUseIPSet *netipx.IPSet, descOrder bool,
+	namespace, pool, preferredIpv4ServiceIP string, inUseIPSet *netipx.IPSet, descOrder bool,
 	ipFamilyPolicy *v1.IPFamilyPolicy, ipFamilies []v1.IPFamily,
 ) (vips string, err error) {
 	var ipv4Pool, ipv6Pool string
@@ -400,82 +528,10 @@ func discoverVIPs(
 		return "", err
 	}
 
-	vipBuilder := strings.Builder{}
-
-	// Handle single stack case
 	if ipFamilyPolicy == nil || *ipFamilyPolicy == v1.IPFamilyPolicySingleStack {
-		ipPool := ipv4Pool
-		if len(ipFamilies) == 0 {
-			if len(ipv4Pool) == 0 {
-				ipPool = ipv6Pool
-			}
-		} else if ipFamilies[0] == v1.IPv6Protocol {
-			ipPool = ipv6Pool
-		}
-		if len(ipPool) == 0 {
-			return "", fmt.Errorf("could not find suitable pool for the IP family of the service")
-		}
-		return discoverAddress(namespace, ipPool, inUseIPSet, descOrder)
+		return discoverVIPsSingleStack(namespace, ipv4Pool, ipv6Pool, preferredIpv4ServiceIP, inUseIPSet, descOrder, ipFamilies)
 	}
-
-	// Handle dual stack case
-	if *ipFamilyPolicy == v1.IPFamilyPolicyRequireDualStack {
-		// With RequireDualStack, we want to make sure both pools with both IP
-		// families exist
-		if len(ipv4Pool) == 0 || len(ipv6Pool) == 0 {
-			return "", fmt.Errorf("service requires dual-stack, but the configuration does not have both IPv4 and IPv6 pools listed for the namespace")
-		}
-	}
-
-	primaryPool := ipv4Pool
-	secondaryPool := ipv6Pool
-	if len(ipFamilies) > 0 && ipFamilies[0] == v1.IPv6Protocol {
-		primaryPool = ipv6Pool
-		secondaryPool = ipv4Pool
-	}
-	// Provide VIPs from both IP families if possible (guaranteed if RequireDualStack)
-	var primaryPoolErr, secondaryPoolErr error
-	if len(primaryPool) > 0 {
-		primaryVip, err := discoverAddress(namespace, primaryPool, inUseIPSet, descOrder)
-		if err == nil {
-			_, _ = vipBuilder.WriteString(primaryVip)
-		} else if _, outOfIPs := err.(*ipam.OutOfIPsError); outOfIPs {
-			primaryPoolErr = err
-		} else {
-			return "", err
-		}
-	}
-	if len(secondaryPool) > 0 {
-		secondaryVip, err := discoverAddress(namespace, secondaryPool, inUseIPSet, descOrder)
-		if err == nil {
-			if vipBuilder.Len() > 0 {
-				vipBuilder.WriteByte(',')
-			}
-			_, _ = vipBuilder.WriteString(secondaryVip)
-		} else if _, outOfIPs := err.(*ipam.OutOfIPsError); outOfIPs {
-			secondaryPoolErr = err
-		} else {
-			return "", err
-		}
-	}
-	if *ipFamilyPolicy == v1.IPFamilyPolicyPreferDualStack {
-		if primaryPoolErr != nil && secondaryPoolErr != nil {
-			return "", fmt.Errorf("could not allocate any IP address for PreferDualStack service: %s", renderErrors(primaryPoolErr, secondaryPoolErr))
-		}
-		singleError := primaryPoolErr
-		if secondaryPoolErr != nil {
-			singleError = secondaryPoolErr
-		}
-		if singleError != nil {
-			klog.Warningf("PreferDualStack service will be single-stack because of error: %s", singleError)
-		}
-	} else if *ipFamilyPolicy == v1.IPFamilyPolicyRequireDualStack {
-		if primaryPoolErr != nil || secondaryPoolErr != nil {
-			return "", fmt.Errorf("could not allocate required IP addresses for RequireDualStack service: %s", renderErrors(primaryPoolErr, secondaryPoolErr))
-		}
-	}
-
-	return vipBuilder.String(), nil
+	return discoverVIPsDualStack(namespace, ipv4Pool, ipv6Pool, preferredIpv4ServiceIP, inUseIPSet, descOrder, ipFamilyPolicy, ipFamilies)
 }
 
 func discoverAddress(namespace, pool string, inUseIPSet *netipx.IPSet, descOrder bool) (vip string, err error) {
