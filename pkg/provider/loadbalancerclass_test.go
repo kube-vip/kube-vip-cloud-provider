@@ -2,9 +2,10 @@ package provider
 
 import (
 	"context"
-	clientgotesting "k8s.io/client-go/testing"
 	"testing"
 	"time"
+
+	clientgotesting "k8s.io/client-go/testing"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

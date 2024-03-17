@@ -3,10 +3,11 @@ package provider
 import (
 	"context"
 	"fmt"
-	"k8s.io/utils/set"
 	"net/netip"
 	"strconv"
 	"strings"
+
+	"k8s.io/utils/set"
 
 	"github.com/kube-vip/kube-vip-cloud-provider/pkg/ipam"
 	"go4.org/netipx"
