@@ -23,15 +23,17 @@ func Test_DiscoveryPoolCIDR(t *testing.T) {
 	dummy.Data["cidr-dummystart"] = "172.16.0.1/24"
 	dummy.Data["cidr-global"] = "192.168.1.1/24"
 	dummy.Data["cidr-system"] = "10.10.10.8/29"
+	dummy.Data["allow-share-system"] = "true"
 	dummy.Data["cidr-dummyend"] = "172.16.0.2/24"
 	dummy.Data["cidr-ipv6"] = "2001::10/127"
 
 	tests := []struct {
-		name     string
-		args     args
-		want     string
-		wantBool bool
-		wantErr  bool
+		name       string
+		args       args
+		want       string
+		allowShare bool
+		wantBool   bool
+		wantErr    bool
 	}{
 		{
 			name: "cidr lookup for known namespace",
@@ -39,9 +41,10 @@ func Test_DiscoveryPoolCIDR(t *testing.T) {
 				*dummy,
 				"system",
 			},
-			want:     "10.10.10.8/29",
-			wantBool: false,
-			wantErr:  false,
+			want:       "10.10.10.8/29",
+			allowShare: true,
+			wantBool:   false,
+			wantErr:    false,
 		},
 		{
 			name: "ipv6, cidr lookup for known namespace",
@@ -67,13 +70,16 @@ func Test_DiscoveryPoolCIDR(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotString, gotBool, err := discoverPool(&tt.args.data, tt.args.cidr, "") // #nosec G601
+			gotString, gotBool, allowShare, err := discoverPool(&tt.args.data, tt.args.cidr, "") // #nosec G601
 			if (err != nil) != tt.wantErr {
 				t.Errorf("discoverPool() error: %v, expected: %v", err, tt.wantErr)
 				return
 			}
 			if !assert.EqualValues(t, gotString, tt.want) && !assert.EqualValues(t, gotBool, tt.wantBool) {
 				t.Errorf("discoverPool() returned: %s : %v, expected: %s : %v", gotString, gotBool, tt.want, tt.wantBool)
+			}
+			if allowShare != tt.allowShare {
+				t.Errorf("discoverPool() has invalid allowShare. expected: %v, got %v", tt.allowShare, allowShare)
 			}
 		})
 	}
@@ -134,7 +140,7 @@ func Test_DiscoveryPoolRange(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotString, gotBool, err := discoverPool(&tt.args.data, tt.args.ipRange, "") // #nosec G601
+			gotString, gotBool, _, err := discoverPool(&tt.args.data, tt.args.ipRange, "") // #nosec G601
 			if (err != nil) != tt.wantErr {
 				t.Errorf("discoverPool() error: %v, expected: %v", err, tt.wantErr)
 				return
@@ -320,10 +326,11 @@ func ipFamilyPolicyPtr(p v1.IPFamilyPolicy) *v1.IPFamilyPolicy {
 
 func Test_discoverVIPs(t *testing.T) {
 	type args struct {
-		ipFamilyPolicy     *v1.IPFamilyPolicy
-		ipFamilies         []v1.IPFamily
-		pool               string
-		existingServiceIPS []string
+		ipFamilyPolicy         *v1.IPFamilyPolicy
+		ipFamilies             []v1.IPFamily
+		pool                   string
+		preferredIpv4ServiceIP string
+		existingServiceIPS     []string
 	}
 
 	tests := []struct {
@@ -352,6 +359,18 @@ func Test_discoverVIPs(t *testing.T) {
 				existingServiceIPS: []string{"10.10.10.8", "10.10.10.9", "10.10.10.10", "10.10.10.12"},
 			},
 			want:    "10.10.10.11",
+			wantErr: false,
+		},
+		{
+			name: "IPv4 pool with preferred IP",
+			args: args{
+				ipFamilyPolicy:         ipFamilyPolicyPtr(v1.IPFamilyPolicySingleStack),
+				ipFamilies:             []v1.IPFamily{v1.IPv4Protocol},
+				pool:                   "10.10.10.8-10.10.10.15",
+				preferredIpv4ServiceIP: "10.10.10.9",
+				existingServiceIPS:     []string{"10.10.10.8", "10.10.10.9", "10.10.10.10", "10.10.10.12"},
+			},
+			want:    "10.10.10.9",
 			wantErr: false,
 		},
 		{
@@ -408,6 +427,18 @@ func Test_discoverVIPs(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "IPv4 pool with PreferDualStack service and preferred IPv4 service IP",
+			args: args{
+				ipFamilyPolicy:         ipFamilyPolicyPtr(v1.IPFamilyPolicyPreferDualStack),
+				ipFamilies:             []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol},
+				pool:                   "10.10.10.8-10.10.10.15",
+				preferredIpv4ServiceIP: "10.10.10.10",
+				existingServiceIPS:     []string{"10.10.10.8", "10.10.10.9", "10.10.10.10", "10.10.10.12"},
+			},
+			want:    "10.10.10.10",
+			wantErr: false,
+		},
+		{
 			name: "IPv6 pool with PreferDualStack service",
 			args: args{
 				ipFamilyPolicy:     ipFamilyPolicyPtr(v1.IPFamilyPolicyPreferDualStack),
@@ -443,6 +474,30 @@ func Test_discoverVIPs(t *testing.T) {
 				ipFamilyPolicy: ipFamilyPolicyPtr(v1.IPFamilyPolicyPreferDualStack),
 				ipFamilies:     []v1.IPFamily{v1.IPv6Protocol, v1.IPv4Protocol},
 				pool:           "10.10.10.8-10.10.10.15,fd00::1-fd00::10",
+			},
+			want:    "fd00::1,10.10.10.8",
+			wantErr: false,
+		},
+		{
+			name: "dualstack pool with PreferDualStack IPv4,IPv6 service and preferred IPv4 service IP",
+			args: args{
+				ipFamilyPolicy:         ipFamilyPolicyPtr(v1.IPFamilyPolicyPreferDualStack),
+				ipFamilies:             []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol},
+				pool:                   "10.10.10.8-10.10.10.15,fd00::1-fd00::10",
+				existingServiceIPS:     []string{"10.10.10.8", "10.10.10.9", "10.10.10.10", "10.10.10.12"},
+				preferredIpv4ServiceIP: "10.10.10.8",
+			},
+			want:    "10.10.10.8,fd00::1",
+			wantErr: false,
+		},
+		{
+			name: "dualstack pool with PreferDualStack IPv6,IPv4 service and preferred IPv4 service IP",
+			args: args{
+				ipFamilyPolicy:         ipFamilyPolicyPtr(v1.IPFamilyPolicyPreferDualStack),
+				ipFamilies:             []v1.IPFamily{v1.IPv6Protocol, v1.IPv4Protocol},
+				pool:                   "10.10.10.8-10.10.10.15,fd00::1-fd00::10",
+				existingServiceIPS:     []string{"10.10.10.8", "10.10.10.9", "10.10.10.10", "10.10.10.12"},
+				preferredIpv4ServiceIP: "10.10.10.8",
 			},
 			want:    "fd00::1,10.10.10.8",
 			wantErr: false,
@@ -637,7 +692,7 @@ func Test_discoverVIPs(t *testing.T) {
 				return
 			}
 
-			gotString, err := discoverVIPs("discover-vips-test-ns", tt.args.pool, s, false, tt.args.ipFamilyPolicy, tt.args.ipFamilies)
+			gotString, err := discoverVIPs("discover-vips-test-ns", tt.args.pool, tt.args.preferredIpv4ServiceIP, s, false, tt.args.ipFamilyPolicy, tt.args.ipFamilies)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("discoverVIP() error: %v, expected: %v", err, tt.wantErr)
 				return

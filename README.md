@@ -21,6 +21,7 @@ The `kube-vip-cloud-provider` will only implement the `loadBalancer` functionali
 - Support for dualstack via the annotation: `kube-vip.io/loadbalancerIPs: 192.168.10.10,2001:db8::1`
 - Support ascending and descending search order when allocating IP from pool or range by setting search-order=desc
 - Support loadbalancerClass `kube-vip.io/kube-vip-class`
+- Support assigning multiple services on single VIP (optional)
 
 ## Installing the `kube-vip-cloud-provider`
 
