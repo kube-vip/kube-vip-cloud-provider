@@ -132,7 +132,7 @@ func parseAddrList(inputString string) (addrs []netip.Addr, err error) {
 }
 
 // Gather infos about implemented services
-func mapImplementedServices(svcs *v1.ServiceList, mapSharedIpv4 bool) (inUseSet *netipx.IPSet, servicePortMap map[string]*set.Set[int32], err error) {
+func mapImplementedServices(svcs *v1.ServiceList, allowShare bool) (inUseSet *netipx.IPSet, servicePortMap map[string]*set.Set[int32], err error) {
 
 	builder := &netipx.IPSetBuilder{}
 	servicePortMap = map[string]*set.Set[int32]{}
@@ -151,7 +151,7 @@ func mapImplementedServices(svcs *v1.ServiceList, mapSharedIpv4 bool) (inUseSet 
 				ip := addr.String()
 
 				// Store service port mapping to help decide whether services could share the same IP.
-				if mapSharedIpv4 && addr.Is4() {
+				if allowShare && addr.Is4() {
 					if len(svc.Spec.Ports) != 0 {
 						for p := range svc.Spec.Ports {
 							var port = svc.Spec.Ports[p].Port
