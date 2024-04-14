@@ -4,6 +4,8 @@ metadata:
   name: kubevip
   namespace: kube-system
 data:
+  allow-share-global: true
   cidr-default: 192.168.0.200/29
   cidr-plunder: 192.168.0.210/29
+  allow-share-plunder: false
   cidr-testing: 192.168.0.220/29

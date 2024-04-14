@@ -20,7 +20,7 @@ func NewService(name string, tweaks ...ServiceTweak) *corev1.Service {
 		},
 		Spec: corev1.ServiceSpec{
 			Type:  corev1.ServiceTypeLoadBalancer,
-			Ports: makeServicePort(corev1.ProtocolTCP, 0),
+			Ports: makeServicePort(corev1.ProtocolTCP, 80, 0),
 		},
 	}
 	for _, tw := range tweaks {
@@ -50,8 +50,8 @@ func TweakAddLBIngress(ip string) ServiceTweak {
 	}
 }
 
-func makeServicePort(protocol corev1.Protocol, targetPort int) []corev1.ServicePort {
-	sp := corev1.ServicePort{Port: 80, Protocol: protocol}
+func makeServicePort(protocol corev1.Protocol, sourcePort, targetPort int) []corev1.ServicePort {
+	sp := corev1.ServicePort{Port: int32(sourcePort), Protocol: protocol}
 	if targetPort > 0 {
 		sp.TargetPort = intstr.FromInt32(int32(targetPort))
 	}
@@ -59,9 +59,9 @@ func makeServicePort(protocol corev1.Protocol, targetPort int) []corev1.ServiceP
 }
 
 // TweakAddPorts returns a func that changes the ServicePort of a service
-func TweakAddPorts(protocol corev1.Protocol, targetPort int) ServiceTweak {
+func TweakAddPorts(protocol corev1.Protocol, sourcePort, targetPort int) ServiceTweak {
 	return func(s *corev1.Service) {
-		s.Spec.Ports = makeServicePort(protocol, targetPort)
+		s.Spec.Ports = makeServicePort(protocol, sourcePort, targetPort)
 	}
 }
 
@@ -104,5 +104,16 @@ func TweakSetIPFamilies(families ...corev1.IPFamily) ServiceTweak {
 func TweakSetLoadbalancerIP(ip string) ServiceTweak {
 	return func(s *corev1.Service) {
 		s.Spec.LoadBalancerIP = ip
+	}
+}
+
+func ipFamilyPolicyPtr(p corev1.IPFamilyPolicy) *corev1.IPFamilyPolicy {
+	return &p
+}
+
+func TweakDualStack() ServiceTweak {
+	return func(s *corev1.Service) {
+		s.Spec.IPFamilyPolicy = ipFamilyPolicyPtr(corev1.IPFamilyPolicyRequireDualStack)
+		s.Spec.IPFamilies = []corev1.IPFamily{corev1.IPv4Protocol, corev1.IPv6Protocol}
 	}
 }

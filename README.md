@@ -21,6 +21,7 @@ The `kube-vip-cloud-provider` will only implement the `loadBalancer` functionali
 - Support for dualstack via the annotation: `kube-vip.io/loadbalancerIPs: 192.168.10.10,2001:db8::1`
 - Support ascending and descending search order when allocating IP from pool or range by setting search-order=desc
 - Support loadbalancerClass `kube-vip.io/kube-vip-class`
+- Support assigning multiple services on single VIP (IPv4 only, optional)
 
 ## Installing the `kube-vip-cloud-provider`
 
@@ -139,6 +140,28 @@ Set the CIDR to `0.0.0.0/32`, that will make the controller to give all _LoadBal
 ## LoadbalancerClass support
 
 If users only want kube-vip-cloud-provider to allocate ip for specific set of services, they can pass `KUBEVIP_ENABLE_LOADBALANCERCLASS: true` as an environment variable to kube-vip-cloud-provider. kube-vip-cloud-provider will only allocate ip to service with `spec.loadBalancerClass: kube-vip.io/kube-vip-class`.
+
+## Allow multiple IPv4 services to share a VIP
+
+When enabled, kube-vip-cloud-provider tries to assign services to already used VIPs if the ports of the services
+do not overlap.
+If you want to enable VIP-sharing between services, you can set `allow-shared`-`namespace` to true. It follows the same rules as
+the configuration for global and namespace pools.
+
+Example-object with sharing enabled for namespace `development`:
+```
+$ kubectl get configmap -n kube-system kubevip -o yaml
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kubevip
+  namespace: kube-system
+data:
+  cidr-default: 192.168.0.200/29
+  cidr-development: 192.168.0.210/29
+  allow-share-development: true
+```
 
 
 ## Debugging
