@@ -3,7 +3,7 @@ module github.com/kube-vip/kube-vip-cloud-provider
 go 1.22
 
 require (
-	github.com/onsi/ginkgo/v2 v2.17.2
+	github.com/onsi/ginkgo/v2 v2.17.3
 	github.com/onsi/gomega v1.33.1
 	github.com/spf13/pflag v1.0.5
 	github.com/stretchr/testify v1.9.0
