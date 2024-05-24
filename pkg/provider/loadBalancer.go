@@ -21,16 +21,22 @@ import (
 )
 
 const (
-	// LoadbalancerIPsAnnotations is for specifying IPs for a loadbalancer
+	// LoadbalancerIPsAnnotation is for specifying IPs for a loadbalancer
 	// use plural for dual stack support in the future
 	// Example: kube-vip.io/loadbalancerIPs: 10.1.2.3,fd00::100
-	LoadbalancerIPsAnnotations = "kube-vip.io/loadbalancerIPs"
+	LoadbalancerIPsAnnotation = "kube-vip.io/loadbalancerIPs"
+
 	// ImplementationLabelKey is the label key showing the service is implemented by kube-vip
 	ImplementationLabelKey = "implementation"
+
 	// ImplementationLabelValue is the label value showing the service is implemented by kube-vip
 	ImplementationLabelValue = "kube-vip"
+
 	// LegacyIpamAddressLabelKey is the legacy label key showing the service is implemented by kube-vip
 	LegacyIpamAddressLabelKey = "ipam-address"
+
+	// LoadbalancerServiceInterfaceAnnotationKey is the annotation key for specifying the service interface for a load balancer
+	LoadbalancerServiceInterfaceAnnotationKey = "kube-vip.io/serviceInterface"
 )
 
 // kubevipLoadBalancerManager -
@@ -87,8 +93,8 @@ func (k *kubevipLoadBalancerManager) deleteLoadBalancer(_ context.Context, servi
 
 func checkLegacyLoadBalancerIPAnnotation(ctx context.Context, kubeClient kubernetes.Interface, service *v1.Service) (*v1.LoadBalancerStatus, error) {
 	if service.Spec.LoadBalancerIP != "" {
-		if v, ok := service.Annotations[LoadbalancerIPsAnnotations]; !ok || len(v) == 0 {
-			klog.Warningf("service.Spec.LoadBalancerIP is defined but annotations '%s' is not, assume it's a legacy service, updates its annotations", LoadbalancerIPsAnnotations)
+		if v, ok := service.Annotations[LoadbalancerIPsAnnotation]; !ok || len(v) == 0 {
+			klog.Warningf("service.Spec.LoadBalancerIP is defined but annotations '%s' is not, assume it's a legacy service, updates its annotations", LoadbalancerIPsAnnotation)
 			// assume it's legacy service, need to update the annotation.
 			err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 				recentService, getErr := kubeClient.CoreV1().Services(service.Namespace).Get(ctx, service.Name, metav1.GetOptions{})
@@ -98,7 +104,7 @@ func checkLegacyLoadBalancerIPAnnotation(ctx context.Context, kubeClient kuberne
 				if recentService.Annotations == nil {
 					recentService.Annotations = make(map[string]string)
 				}
-				recentService.Annotations[LoadbalancerIPsAnnotations] = service.Spec.LoadBalancerIP
+				recentService.Annotations[LoadbalancerIPsAnnotation] = service.Spec.LoadBalancerIP
 				// remove ipam-address label
 				delete(recentService.Labels, LegacyIpamAddressLabelKey)
 
@@ -140,7 +146,7 @@ func mapImplementedServices(svcs *v1.ServiceList, allowShare bool) (inUseSet *ne
 	for x := range svcs.Items {
 		var svc = svcs.Items[x]
 
-		if ips, ok := svc.Annotations[LoadbalancerIPsAnnotations]; ok {
+		if ips, ok := svc.Annotations[LoadbalancerIPsAnnotation]; ok {
 			addrs, err := parseAddrList(ips)
 			if err != nil {
 				return nil, nil, err
@@ -204,9 +210,9 @@ func syncLoadBalancer(ctx context.Context, kubeClient kubernetes.Interface, serv
 
 	// Check if the service already got a LoadbalancerIPsAnnotation,
 	// if so, check if LoadbalancerIPsAnnotation was created by cloud-controller (ImplementationLabelKey == ImplementationLabelValue)
-	if v, ok := service.Annotations[LoadbalancerIPsAnnotations]; ok && len(v) != 0 {
-		klog.Infof("service '%s/%s' annotations '%s' is defined but service.Spec.LoadBalancerIP is not. Assume it's not legacy service", service.Namespace, service.Name, LoadbalancerIPsAnnotations)
-		// Set Label for service lookups
+	if v, ok := service.Annotations[LoadbalancerIPsAnnotation]; ok && len(v) != 0 {
+		klog.Infof("service '%s/%s' annotations '%s' is defined but service.Spec.LoadBalancerIP is not. Assume it's not legacy service", service.Namespace, service.Name, LoadbalancerIPsAnnotation)
+		// Set label ImplementationLabelKey, otherwise cloud-provider will skip the service
 		if service.Labels == nil || service.Labels[ImplementationLabelKey] != ImplementationLabelValue {
 			klog.Infof("service '%s/%s' created with pre-defined ip '%s'", service.Namespace, service.Name, v)
 			err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
@@ -254,9 +260,7 @@ func syncLoadBalancer(ctx context.Context, kubeClient kubernetes.Interface, serv
 
 	svcs, err := kubeClient.CoreV1().Services(serviceNamespace).List(ctx, metav1.ListOptions{LabelSelector: getKubevipImplementationLabel()})
 	if err != nil {
-		if err != nil {
-			return &service.Status.LoadBalancer, err
-		}
+		return &service.Status.LoadBalancer, err
 	}
 
 	inUseSet, servicePortMap, err := mapImplementedServices(svcs, allowShare)
@@ -278,6 +282,12 @@ func syncLoadBalancer(ctx context.Context, kubeClient kubernetes.Interface, serv
 		return nil, err
 	}
 
+	// Get the loadbalancer interface if it's defined for the namespace
+	var loadbalancerInterface string
+	if len(loadBalancerIPs) > 0 {
+		loadbalancerInterface = discoverInterface(controllerCM, service.Namespace)
+	}
+
 	// Update the services with this new address
 	retryErr := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		recentService, getErr := kubeClient.CoreV1().Services(service.Namespace).Get(ctx, service.Name, metav1.GetOptions{})
@@ -297,12 +307,17 @@ func syncLoadBalancer(ctx context.Context, kubeClient kubernetes.Interface, serv
 		if recentService.Annotations == nil {
 			recentService.Annotations = make(map[string]string)
 		}
-		// use annotation instead of label to support ipv6
-		recentService.Annotations[LoadbalancerIPsAnnotations] = loadBalancerIPs
+		// use annotation to specify static IP, instead of spec.LoadbalancerIP, to support IPv6 dualstack.
+		recentService.Annotations[LoadbalancerIPsAnnotation] = loadBalancerIPs
 
 		// this line will be removed once kube-vip can recognize annotations
 		// Set IPAM address to Load Balancer Service
 		recentService.Spec.LoadBalancerIP = strings.Split(loadBalancerIPs, ",")[0]
+
+		if len(loadbalancerInterface) > 0 {
+			klog.Infof("Updating service [%s], with load balancer interface [%s]", service.Name, loadbalancerInterface)
+			recentService.Annotations[LoadbalancerServiceInterfaceAnnotationKey] = loadbalancerInterface
+		}
 
 		// Update the actual service with the address and the labels
 		_, updateErr := kubeClient.CoreV1().Services(recentService.Namespace).Update(ctx, recentService, metav1.UpdateOptions{})
@@ -560,7 +575,7 @@ func getKubevipImplementationLabel() string {
 }
 
 func getSearchOrder(cm *v1.ConfigMap) (descOrder bool) {
-	if searchOrder, ok := cm.Data["search-order"]; ok {
+	if searchOrder, ok := cm.Data[ConfigMapSearchOrderKey]; ok {
 		if searchOrder == "desc" {
 			return true
 		}
@@ -576,4 +591,18 @@ func renderErrors(errs ...error) string {
 		}
 	}
 	return s.String()
+}
+
+// found interface of that service from configmap.
+// if not found, return ""
+func discoverInterface(cm *v1.ConfigMap, svcNS string) string {
+	if interfaceName, ok := cm.Data[fmt.Sprintf("%s-%s", ConfigMapServiceInterfacePrefix, svcNS)]; ok {
+		return interfaceName
+	}
+	// fall back to global interface
+	if interfaceName, ok := cm.Data[fmt.Sprintf("%s-global", ConfigMapServiceInterfacePrefix)]; ok {
+		return interfaceName
+	}
+
+	return ""
 }

@@ -22,6 +22,7 @@ The `kube-vip-cloud-provider` will only implement the `loadBalancer` functionali
 - Support ascending and descending search order when allocating IP from pool or range by setting search-order=desc
 - Support loadbalancerClass `kube-vip.io/kube-vip-class`
 - Support assigning multiple services on single VIP (IPv4 only, optional)
+- Support specifying service interface per namespace or at global level
 
 ## Installing the `kube-vip-cloud-provider`
 
@@ -163,6 +164,26 @@ data:
   allow-share-development: true
 ```
 
+### Namespace pool
+
+Kube-vip 0.8.0 supports `kube-vip.io/serviceInterface` annotation on service type LB. Now user can specify a ip range/cidr at namespace level, we would assume these ips within a namespace should share the same interface, then we support specifying interface per namespace level by
+
+```
+$ kubectl get configmap -n kube-system kubevip -o yaml
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kubevip
+  namespace: kube-system
+data:
+  cidr-default: 192.168.0.200/29
+  interface-default: eth3
+  cidr-development: 172.16.0.0/29
+  interface-default: eth5
+```
+
+`interface-global` could be used to specify all ips would use this ip address. If there is no interface specified for a namespace, it will fall back to this `interface-global`. But this is usually not needed since kube-vip has `vip_servicesinterface` for user to define default interface for service type LB.
 
 ## Debugging
 
