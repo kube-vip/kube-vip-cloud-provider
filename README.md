@@ -10,7 +10,7 @@ The `kube-vip-cloud-provider` will only implement the `loadBalancer` functionali
 
 ## IP address functionality
 
-- IP address pools by CIDR
+- IP address pools by CIDR (excluding the network(first) address and broadcast(last) address)
 - IP ranges [start address - end address]
 - Multiple pools by CIDR per namespace
 - Multiple IP ranges per namespace (handles overlapping ranges)
