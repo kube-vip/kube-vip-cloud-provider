@@ -81,12 +81,6 @@ func TestSyncLoadBalancerIfNeeded(t *testing.T) {
 			expectNumOfPatch:  1,
 		},
 		{
-			desc:              "service specifies incorrect loadBalancerClass",
-			service:           tu.NewService("with-external-balancer", tu.TweakAddLBClass(ptr.To(LoadbalancerClass))),
-			expectNumOfUpdate: 1,
-			expectNumOfPatch:  1,
-		},
-		{
 			desc:             "service that needs cleanup",
 			service:          tu.NewService("basic-service2", tu.TweakAddLBIngress("8.8.8.8"), tu.TweakAddFinalizers(servicehelper.LoadBalancerCleanupFinalizer), tu.TweakAddDeletionTimestamp(time.Now()), tu.TweakAddLBClass(ptr.To(LoadbalancerClass))),
 			expectNumOfPatch: 1,
@@ -185,13 +179,6 @@ func TestSyncLoadBalancerIfNeededWithMultipleIpUse(t *testing.T) {
 			expectNumOfPatch:  1,
 		},
 		{
-			desc:              "service specifies incorrect loadBalancerClass",
-			service:           tu.NewService("with-external-balancer", tu.TweakAddLBClass(ptr.To(LoadbalancerClass))),
-			expectIP:          "10.0.0.1",
-			expectNumOfUpdate: 1,
-			expectNumOfPatch:  1,
-		},
-		{
 			desc:             "service that needs cleanup",
 			service:          tu.NewService("basic-service2", tu.TweakAddLBIngress("8.8.8.8"), tu.TweakAddFinalizers(servicehelper.LoadBalancerCleanupFinalizer), tu.TweakAddDeletionTimestamp(time.Now()), tu.TweakAddLBClass(ptr.To(LoadbalancerClass))),
 			expectNumOfPatch: 1,
@@ -199,14 +186,23 @@ func TestSyncLoadBalancerIfNeededWithMultipleIpUse(t *testing.T) {
 		{
 			desc:              "service with finalizer that wants LB",
 			service:           tu.NewService("basic-service3", tu.TweakAddFinalizers(servicehelper.LoadBalancerCleanupFinalizer), tu.TweakAddLBClass(ptr.To(LoadbalancerClass))),
-			expectIP:          "10.0.0.2",
+			expectIP:          "10.0.0.1",
 			expectNumOfUpdate: 1,
 		},
 		{
-			desc:              "another tcp service that wants LB",
-			service:           tu.NewService("basic-service4", tu.TweakAddPorts(corev1.ProtocolTCP, 80, 80), tu.TweakAddLBClass(ptr.To(LoadbalancerClass))),
-			expectNumOfUpdate: 0,
+			desc:              "now there is not enough ip, another tcp service that wants LB, but still could share ip with existing service",
+			service:           tu.NewService("basic-service4", tu.TweakAddPorts(corev1.ProtocolTCP, 8080, 8080), tu.TweakAddLBClass(ptr.To(LoadbalancerClass))),
+			expectNumOfUpdate: 1,
 			expectNumOfPatch:  1,
+			expectIP:          "10.0.0.1",
+			expectError:       true,
+		},
+		{
+			desc:              "another service who wants same port, get a new IP address",
+			service:           tu.NewService("basic-service5", tu.TweakAddPorts(corev1.ProtocolTCP, 80, 80), tu.TweakAddLBClass(ptr.To(LoadbalancerClass))),
+			expectNumOfUpdate: 1,
+			expectNumOfPatch:  1,
+			expectIP:          "10.0.0.2",
 			expectError:       true,
 		},
 	}
@@ -214,6 +210,7 @@ func TestSyncLoadBalancerIfNeededWithMultipleIpUse(t *testing.T) {
 	// create ip pool for service to use
 	client := fake.NewSimpleClientset()
 	ctx := context.Background()
+	// This pool has 4 ipv4 addresses and 8 ipv6 address
 	cm := newSmallIPPoolConfigMap()
 	if _, err := client.CoreV1().ConfigMaps(cm.Namespace).Create(ctx, cm, metav1.CreateOptions{}); err != nil {
 		t.Errorf("Failed to prepare configmap %s for testing: %v", cm.Name, err)
@@ -256,7 +253,7 @@ func TestSyncLoadBalancerIfNeededWithMultipleIpUse(t *testing.T) {
 				t.Errorf("expect %d patches, got %d patches.", tc.expectNumOfPatch, patchNum)
 			}
 			if lbIP != tc.expectIP {
-				t.Errorf("expect %s LbIP, got %s.", tc.expectIP, lbIP)
+				t.Errorf("expect '%s' LbIP, got '%s'.", tc.expectIP, lbIP)
 			}
 		})
 	}

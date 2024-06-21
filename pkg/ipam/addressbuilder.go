@@ -5,6 +5,7 @@ import (
 	"net/netip"
 	"strings"
 
+	"github.com/kube-vip/kube-vip-cloud-provider/pkg/config"
 	"go4.org/netipx"
 )
 
@@ -30,7 +31,7 @@ func parseCidrs(cidr string) (*netipx.IPSet, error) {
 
 // buildHostsFromCidr - Builds a IPSet constructed from the cidr and filters out
 // the broadcast IP and network IP for IPv4 networks
-func buildHostsFromCidr(cidr string) (*netipx.IPSet, error) {
+func buildHostsFromCidr(cidr string, kubevipLBConfig *config.KubevipLBConfig) (*netipx.IPSet, error) {
 	unfilteredSet, err := parseCidrs(cidr)
 	if err != nil {
 		return nil, err
@@ -38,22 +39,31 @@ func buildHostsFromCidr(cidr string) (*netipx.IPSet, error) {
 
 	builder := &netipx.IPSetBuilder{}
 	for _, prefix := range unfilteredSet.Prefixes() {
-		if prefix.IsSingleIP() {
-			builder.Add(prefix.Addr())
-			continue
-		}
+		// If the prefix is IPv6 address, add it to the builder directly
 		if !prefix.Addr().Is4() {
 			builder.AddPrefix(prefix)
 			continue
 		}
+
+		// Only skip the end IPs if skip-end-ips-in-cidr in configMap is set to true.
+		if prefix.IsSingleIP() && kubevipLBConfig != nil && kubevipLBConfig.SkipEndIPsInCIDR {
+			builder.Add(prefix.Addr())
+			continue
+		}
+
 		if r := netipx.RangeOfPrefix(prefix); r.IsValid() {
 			if prefix.Bits() == 31 {
 				// rfc3021 Using 31-Bit Prefixes on IPv4 Point-to-Point Links
 				builder.AddRange(netipx.IPRangeFrom(r.From(), r.To()))
 				continue
 			}
+
+			from, to := r.From(), r.To()
 			// For 192.168.0.200/23, 192.168.0.206 is the BroadcastIP, and 192.168.0.201 is the NetworkID
-			builder.AddRange(netipx.IPRangeFrom(r.From().Next(), r.To().Prev()))
+			if kubevipLBConfig != nil && kubevipLBConfig.SkipEndIPsInCIDR {
+				from, to = from.Next(), to.Prev()
+			}
+			builder.AddRange(netipx.IPRangeFrom(from, to))
 		}
 	}
 	return builder.IPSet()

@@ -5,6 +5,7 @@ import (
 	"net/netip"
 	"testing"
 
+	"github.com/kube-vip/kube-vip-cloud-provider/pkg/config"
 	"github.com/stretchr/testify/assert"
 	"go4.org/netipx"
 	v1 "k8s.io/api/core/v1"
@@ -224,7 +225,7 @@ func Test_DiscoveryAddressCIDR(t *testing.T) {
 				return
 			}
 
-			gotString, err := discoverAddress(tt.args.namespace, tt.args.pool, s, false)
+			gotString, err := discoverAddress(tt.args.namespace, tt.args.pool, s, &config.KubevipLBConfig{})
 			if (err != nil) != tt.wantErr {
 				t.Errorf("discoverAddress() error: %v, expected: %v", err, tt.wantErr)
 				return
@@ -308,7 +309,7 @@ func Test_DiscoveryAddressRange(t *testing.T) {
 				return
 			}
 
-			gotString, err := discoverAddress(tt.args.namespace, tt.args.pool, s, false)
+			gotString, err := discoverAddress(tt.args.namespace, tt.args.pool, s, &config.KubevipLBConfig{})
 			if (err != nil) != tt.wantErr {
 				t.Errorf("discoverAddress() error: %v, expected: %v", err, tt.wantErr)
 				return
@@ -692,7 +693,7 @@ func Test_discoverVIPs(t *testing.T) {
 				return
 			}
 
-			gotString, err := discoverVIPs("discover-vips-test-ns", tt.args.pool, tt.args.preferredIpv4ServiceIP, s, false, tt.args.ipFamilyPolicy, tt.args.ipFamilies)
+			gotString, err := discoverVIPs("discover-vips-test-ns", tt.args.pool, tt.args.preferredIpv4ServiceIP, s, &config.KubevipLBConfig{}, tt.args.ipFamilyPolicy, tt.args.ipFamilies)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("discoverVIP() error: %v, expected: %v", err, tt.wantErr)
 				return

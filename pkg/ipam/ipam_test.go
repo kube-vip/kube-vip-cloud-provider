@@ -4,6 +4,7 @@ import (
 	"net/netip"
 	"testing"
 
+	"github.com/kube-vip/kube-vip-cloud-provider/pkg/config"
 	"go4.org/netipx"
 )
 
@@ -122,7 +123,8 @@ func Test_buildHostsFromRange(t *testing.T) {
 
 func Test_buildHostsFromCidr(t *testing.T) {
 	type args struct {
-		cidr string
+		cidr  string
+		kvlbc *config.KubevipLBConfig
 	}
 	tests := []struct {
 		name    string
@@ -131,17 +133,70 @@ func Test_buildHostsFromCidr(t *testing.T) {
 		wantErr bool
 	}{
 		{
+			name: "single entry, /32, 1 address",
+			args: args{
+				cidr: "192.168.0.200/32",
+			},
+			want:    []string{"192.168.0.200"},
+			wantErr: false,
+		},
+		{
+			name: "single entry, /32, 1 address, if skipEndIPsInCIDR is set",
+			args: args{
+				cidr:  "192.168.0.200/32",
+				kvlbc: &config.KubevipLBConfig{SkipEndIPsInCIDR: true},
+			},
+			want:    []string{"192.168.0.200"},
+			wantErr: false,
+		},
+		{
 			name: "single entry, 4 address",
 			args: args{
-				"192.168.0.200/30",
+				cidr: "192.168.0.200/30",
+			},
+			want:    []string{"192.168.0.200", "192.168.0.201", "192.168.0.202", "192.168.0.203"},
+			wantErr: false,
+		},
+		{
+			name: "single entry, 2 address, if skipEndIPsInCIDR is set",
+			args: args{
+				cidr:  "192.168.0.200/30",
+				kvlbc: &config.KubevipLBConfig{SkipEndIPsInCIDR: true},
 			},
 			want:    []string{"192.168.0.201", "192.168.0.202"},
 			wantErr: false,
 		},
 		{
-			name: "dual entry, overlap address",
+			name: "single entry, /31, 2 address, if skipEndIPsInCIDR is set",
 			args: args{
-				"192.168.0.200/30,192.168.0.200/29",
+				cidr:  "192.168.0.200/31",
+				kvlbc: &config.KubevipLBConfig{SkipEndIPsInCIDR: true},
+			},
+			want:    []string{"192.168.0.200", "192.168.0.201"},
+			wantErr: false,
+		},
+		{
+			name: "single entry, /31, 2 address, if skipEndIPsInCIDR is set",
+			args: args{
+				cidr:  "192.168.0.200/31",
+				kvlbc: &config.KubevipLBConfig{SkipEndIPsInCIDR: true},
+			},
+			want:    []string{"192.168.0.200", "192.168.0.201"},
+			wantErr: false,
+		},
+		{
+			name: "dual entry, overlap address, return 8 addresses",
+			args: args{
+				cidr: "192.168.0.200/30,192.168.0.200/29",
+			},
+			want:    []string{"192.168.0.200", "192.168.0.201", "192.168.0.202", "192.168.0.203", "192.168.0.204", "192.168.0.205", "192.168.0.206", "192.168.0.207"},
+			wantErr: false,
+		},
+		{
+			name: "dual entry, overlap addressm return 6 addresses, if skipEndIPsInCIDR is set",
+			args: args{
+				cidr:  "192.168.0.200/30,192.168.0.200/29",
+				kvlbc: &config.KubevipLBConfig{SkipEndIPsInCIDR: true},
 			},
 			want:    []string{"192.168.0.201", "192.168.0.202", "192.168.0.203", "192.168.0.204", "192.168.0.205", "192.168.0.206"},
 			wantErr: false,
@@ -149,7 +204,7 @@ func Test_buildHostsFromCidr(t *testing.T) {
 		{
 			name: "ipv6, two ips",
 			args: args{
-				"fe80::10/127",
+				cidr: "fe80::10/127",
 			},
 			want:    []string{"fe80::10", "fe80::11"},
 			wantErr: false,
@@ -157,7 +212,7 @@ func Test_buildHostsFromCidr(t *testing.T) {
 		{
 			name: "ipv6, two cidrs",
 			args: args{
-				"fe80::10/127,fe80::fe/127",
+				cidr: "fe80::10/127,fe80::fe/127",
 			},
 			want:    []string{"fe80::10", "fe80::11", "fe80::fe", "fe80::ff"},
 			wantErr: false,
@@ -165,7 +220,7 @@ func Test_buildHostsFromCidr(t *testing.T) {
 		{
 			name: "ipv6, two cidrs with overlap",
 			args: args{
-				"fe80::10/126,fe80::12/127",
+				cidr: "fe80::10/126,fe80::12/127",
 			},
 			want:    []string{"fe80::10", "fe80::11", "fe80::12", "fe80::13"},
 			wantErr: false,
@@ -173,7 +228,7 @@ func Test_buildHostsFromCidr(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := buildHostsFromCidr(tt.args.cidr)
+			got, err := buildHostsFromCidr(tt.args.cidr, tt.args.kvlbc)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("buildHostsFromCidr() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -416,7 +471,7 @@ func TestFindAvailableHostFromRange(t *testing.T) {
 			want: "192.168.0.10",
 		},
 		{
-			name: "simple range, revert",
+			name: "simple range, reverse order",
 			args: args{
 				namespace:        "default",
 				ipRange:          "192.168.0.10-192.168.0.10",
@@ -435,7 +490,7 @@ func TestFindAvailableHostFromRange(t *testing.T) {
 			want: "192.168.0.10",
 		},
 		{
-			name: "single range, three addresses, revert",
+			name: "single range, three addresses, reverse order",
 			args: args{
 				namespace:        "default2",
 				ipRange:          "192.168.0.10-192.168.0.12",
@@ -454,7 +509,7 @@ func TestFindAvailableHostFromRange(t *testing.T) {
 			want: "192.168.1.1",
 		},
 		{
-			name: "single range, across third octet, revert",
+			name: "single range, across third octet, reverse order",
 			args: args{
 				namespace:        "default2",
 				ipRange:          "192.168.0.253-192.168.1.2",
@@ -473,7 +528,7 @@ func TestFindAvailableHostFromRange(t *testing.T) {
 			want: "192.168.0.11",
 		},
 		{
-			name: "two ranges, four addresses, revert",
+			name: "two ranges, four addresses, reverse order",
 			args: args{
 				namespace:        "default2",
 				ipRange:          "192.168.0.10-192.168.0.11,192.168.1.20-192.168.1.22",
@@ -492,7 +547,7 @@ func TestFindAvailableHostFromRange(t *testing.T) {
 			want: "fe80::13",
 		},
 		{
-			name: "ipv6, simple range, revert",
+			name: "ipv6, simple range, reverse order",
 			args: args{
 				namespace:        "default",
 				ipRange:          "fe80::13-fe80::14",
@@ -511,7 +566,7 @@ func TestFindAvailableHostFromRange(t *testing.T) {
 			want: "fe80::13",
 		},
 		{
-			name: "ipv6, single range, three addresses, revert",
+			name: "ipv6, single range, three addresses, reverse order",
 			args: args{
 				namespace:        "default2",
 				ipRange:          "fe80::13-fe80::15",
@@ -530,7 +585,7 @@ func TestFindAvailableHostFromRange(t *testing.T) {
 			want: "fe80::1:0",
 		},
 		{
-			name: "ipv6, single range, across third octet, revert",
+			name: "ipv6, single range, across third octet, reverse order",
 			args: args{
 				namespace:        "default2",
 				ipRange:          "fe80::ffff-fe80::1:3",
@@ -549,7 +604,7 @@ func TestFindAvailableHostFromRange(t *testing.T) {
 			want: "fe81::20",
 		},
 		{
-			name: "ipv6, two ranges, 5 addresses, revert",
+			name: "ipv6, two ranges, 5 addresses, reverse order",
 			args: args{
 				namespace:        "default2",
 				ipRange:          "fe80::10-fe80::12,fe81::20-fe81::21",
@@ -577,7 +632,7 @@ func TestFindAvailableHostFromRange(t *testing.T) {
 				return
 			}
 
-			got, err := FindAvailableHostFromRange(tt.args.namespace, tt.args.ipRange, s, tt.args.descOrder)
+			got, err := FindAvailableHostFromRange(tt.args.namespace, tt.args.ipRange, s, &config.KubevipLBConfig{ReturnIPInDescOrder: tt.args.descOrder})
 			if (err != nil) != tt.wantErr {
 				t.Errorf("FindAvailableHostFromRange() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -594,7 +649,7 @@ func TestFindAvailableHostFromCIDR(t *testing.T) {
 		namespace        string
 		cidr             string
 		existingServices []string
-		descOrder        bool
+		kvlbc            *config.KubevipLBConfig
 	}
 	tests := []struct {
 		name    string
@@ -603,21 +658,41 @@ func TestFindAvailableHostFromCIDR(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "single entry, two address",
+			name: "single entry, 4 addresses, allocate the first one",
 			args: args{
 				namespace:        "default",
 				cidr:             "192.168.0.200/30",
 				existingServices: []string{},
 			},
-			want: "192.168.0.201",
+			want: "192.168.0.200",
 		},
 		{
-			name: "single entry, two address, revert",
+			name: "single entry, 4 addresses, allocate second address if SkipEndIPsInCIDR is set",
 			args: args{
 				namespace:        "default",
 				cidr:             "192.168.0.200/30",
 				existingServices: []string{},
-				descOrder:        true,
+				kvlbc:            &config.KubevipLBConfig{SkipEndIPsInCIDR: true},
+			},
+			want: "192.168.0.201",
+		},
+		{
+			name: "single entry, two address, reverse ip order",
+			args: args{
+				namespace:        "default",
+				cidr:             "192.168.0.200/30",
+				existingServices: []string{},
+				kvlbc:            &config.KubevipLBConfig{ReturnIPInDescOrder: true},
+			},
+			want: "192.168.0.203",
+		},
+		{
+			name: "single entry, two address, reverse ip order, allocate second last address if SkipEndIPsInCIDR is set",
+			args: args{
+				namespace:        "default",
+				cidr:             "192.168.0.200/30",
+				existingServices: []string{},
+				kvlbc:            &config.KubevipLBConfig{ReturnIPInDescOrder: true, SkipEndIPsInCIDR: true},
 			},
 			want: "192.168.0.202",
 		},
@@ -631,12 +706,12 @@ func TestFindAvailableHostFromCIDR(t *testing.T) {
 			want: "192.168.0.1",
 		},
 		{
-			name: "simple cidr, cidr contains .0 and .255, revert",
+			name: "simple cidr, cidr contains .0 and .255, reverse order",
 			args: args{
 				namespace:        "default2",
 				cidr:             "192.168.0.10/24",
 				existingServices: []string{},
-				descOrder:        true,
+				kvlbc:            &config.KubevipLBConfig{ReturnIPInDescOrder: true},
 			},
 			want: "192.168.0.254",
 		},
@@ -650,12 +725,12 @@ func TestFindAvailableHostFromCIDR(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "no ip available, revert",
+			name: "no ip available, reverse order",
 			args: args{
 				namespace:        "default2",
 				cidr:             "192.168.0.255/30",
 				existingServices: []string{"192.168.0.254", "192.168.0.252", "192.168.0.253"},
-				descOrder:        true,
+				kvlbc:            &config.KubevipLBConfig{ReturnIPInDescOrder: true},
 			},
 			wantErr: true,
 		},
@@ -666,15 +741,35 @@ func TestFindAvailableHostFromCIDR(t *testing.T) {
 				cidr:             "192.168.0.200/30,192.168.0.200/29",
 				existingServices: []string{"192.168.0.201", "192.168.0.202"},
 			},
-			want: "192.168.0.203",
+			want: "192.168.0.200",
 		},
 		{
-			name: "dual entry, overlap address, revert",
+			name: "dual entry, overlap address, set SkipEndIPsInCIDR, pick next available address after first one",
 			args: args{
 				namespace:        "default2",
 				cidr:             "192.168.0.200/30,192.168.0.200/29",
 				existingServices: []string{"192.168.0.201", "192.168.0.202"},
-				descOrder:        true,
+				kvlbc:            &config.KubevipLBConfig{SkipEndIPsInCIDR: true},
+			},
+			want: "192.168.0.203",
+		},
+		{
+			name: "dual entry, overlap address, reverse order, pick next available address from last",
+			args: args{
+				namespace:        "default2",
+				cidr:             "192.168.0.200/30,192.168.0.200/29",
+				existingServices: []string{"192.168.0.201", "192.168.0.202"},
+				kvlbc:            &config.KubevipLBConfig{ReturnIPInDescOrder: true},
+			},
+			want: "192.168.0.207",
+		},
+		{
+			name: "dual entry, overlap address, reverse order, set SkipEndIPsInCIDR, pick next available address before last",
+			args: args{
+				namespace:        "default2",
+				cidr:             "192.168.0.200/30,192.168.0.200/29",
+				existingServices: []string{"192.168.0.201", "192.168.0.202"},
+				kvlbc:            &config.KubevipLBConfig{ReturnIPInDescOrder: true, SkipEndIPsInCIDR: true},
 			},
 			want: "192.168.0.206",
 		},
@@ -688,12 +783,22 @@ func TestFindAvailableHostFromCIDR(t *testing.T) {
 			want: "2001::49fe",
 		},
 		{
-			name: "ipv6, single entry, two address, revert",
+			name: "ipv6, single entry, two address, set SkipEndIPsInCIDR no effect",
 			args: args{
 				namespace:        "default",
 				cidr:             "2001::49fe/127",
 				existingServices: []string{},
-				descOrder:        true,
+				kvlbc:            &config.KubevipLBConfig{SkipEndIPsInCIDR: true},
+			},
+			want: "2001::49fe",
+		},
+		{
+			name: "ipv6, single entry, two address, reverse order",
+			args: args{
+				namespace:        "default",
+				cidr:             "2001::49fe/127",
+				existingServices: []string{},
+				kvlbc:            &config.KubevipLBConfig{ReturnIPInDescOrder: true},
 			},
 			want: "2001::49ff",
 		},
@@ -707,12 +812,12 @@ func TestFindAvailableHostFromCIDR(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "ipv6, no ip available, revert",
+			name: "ipv6, no ip available, reverse order",
 			args: args{
 				namespace:        "default2",
 				cidr:             "2001::49fe/127",
 				existingServices: []string{"2001::49fe", "2001::49ff"},
-				descOrder:        true,
+				kvlbc:            &config.KubevipLBConfig{ReturnIPInDescOrder: true},
 			},
 			wantErr: true,
 		},
@@ -726,12 +831,12 @@ func TestFindAvailableHostFromCIDR(t *testing.T) {
 			want: "2001::12",
 		},
 		{
-			name: "ipv6, dual entry, overlap address, revert",
+			name: "ipv6, dual entry, overlap address, reverse order",
 			args: args{
 				namespace:        "default2",
 				cidr:             "2001::10/126,2001::12/127",
 				existingServices: []string{"2001::10", "2001::11"},
-				descOrder:        true,
+				kvlbc:            &config.KubevipLBConfig{ReturnIPInDescOrder: true},
 			},
 			want: "2001::13",
 		},
@@ -753,8 +858,7 @@ func TestFindAvailableHostFromCIDR(t *testing.T) {
 				t.Errorf("FindAvailableHostFromCIDR() error = %v", err)
 				return
 			}
-
-			got, err := FindAvailableHostFromCidr(tt.args.namespace, tt.args.cidr, s, tt.args.descOrder)
+			got, err := FindAvailableHostFromCidr(tt.args.namespace, tt.args.cidr, s, tt.args.kvlbc)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("FindAvailableHostFromCIDR() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -762,6 +866,8 @@ func TestFindAvailableHostFromCIDR(t *testing.T) {
 			if got != tt.want {
 				t.Errorf("FindAvailableHostFromCIDR() = %v, want %v", got, tt.want)
 			}
+			// clean up the ipManager so it doesn't impact other test
+			Manager = []ipManager{}
 		})
 	}
 }

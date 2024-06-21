@@ -7,17 +7,17 @@ import (
 	"strconv"
 	"strings"
 
-	"k8s.io/utils/set"
-
-	"github.com/kube-vip/kube-vip-cloud-provider/pkg/ipam"
 	"go4.org/netipx"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/retry"
 	cloudprovider "k8s.io/cloud-provider"
-
 	"k8s.io/klog"
+	"k8s.io/utils/set"
+
+	"github.com/kube-vip/kube-vip-cloud-provider/pkg/config"
+	"github.com/kube-vip/kube-vip-cloud-provider/pkg/ipam"
 )
 
 const (
@@ -268,7 +268,7 @@ func syncLoadBalancer(ctx context.Context, kubeClient kubernetes.Interface, serv
 		return nil, err
 	}
 
-	descOrder := getSearchOrder(controllerCM)
+	kubevipLBConfig := config.GetKubevipLBConfig(controllerCM)
 
 	preferredIpv4ServiceIP := ""
 
@@ -277,7 +277,7 @@ func syncLoadBalancer(ctx context.Context, kubeClient kubernetes.Interface, serv
 	}
 
 	// If allowedShare is true but no IP could be shared, or allowedShare is false, switch to use IPAM lookup
-	loadBalancerIPs, err := discoverVIPs(service.Namespace, pool, preferredIpv4ServiceIP, inUseSet, descOrder, service.Spec.IPFamilyPolicy, service.Spec.IPFamilies)
+	loadBalancerIPs, err := discoverVIPs(service.Namespace, pool, preferredIpv4ServiceIP, inUseSet, kubevipLBConfig, service.Spec.IPFamilyPolicy, service.Spec.IPFamilies)
 	if err != nil {
 		return nil, err
 	}
@@ -422,7 +422,7 @@ func discoverSharedVIPs(service *v1.Service, servicePortMap map[string]*set.Set[
 	return ""
 }
 
-func discoverVIPsSingleStack(namespace, ipv4Pool, ipv6Pool string, preferredIpv4ServiceIP string, inUseIPSet *netipx.IPSet, descOrder bool,
+func discoverVIPsSingleStack(namespace, ipv4Pool, ipv6Pool string, preferredIpv4ServiceIP string, inUseIPSet *netipx.IPSet, kubevipLBConfig *config.KubevipLBConfig,
 	ipFamilies []v1.IPFamily) (vips string, err error) {
 
 	ipPool := ipv4Pool
@@ -439,11 +439,11 @@ func discoverVIPsSingleStack(namespace, ipv4Pool, ipv6Pool string, preferredIpv4
 	if ipPool == ipv4Pool && len(preferredIpv4ServiceIP) > 0 {
 		return preferredIpv4ServiceIP, nil
 	}
-	return discoverAddress(namespace, ipPool, inUseIPSet, descOrder)
+	return discoverAddress(namespace, ipPool, inUseIPSet, kubevipLBConfig)
 
 }
 
-func discoverFromPool(namespace, pool, preferredIpv4ServiceIP, ipv4Pool string, inUseIPSet *netipx.IPSet, descOrder bool, vipList *[]string) (poolError, err error) {
+func discoverFromPool(namespace, pool, preferredIpv4ServiceIP, ipv4Pool string, inUseIPSet *netipx.IPSet, kubevipLBConfig *config.KubevipLBConfig, vipList *[]string) (poolError, err error) {
 	if len(pool) == 0 {
 		return nil, nil
 	}
@@ -452,7 +452,7 @@ func discoverFromPool(namespace, pool, preferredIpv4ServiceIP, ipv4Pool string, 
 	if pool == ipv4Pool && len(preferredIpv4ServiceIP) > 0 {
 		vip = preferredIpv4ServiceIP
 	} else {
-		vip, err = discoverAddress(namespace, pool, inUseIPSet, descOrder)
+		vip, err = discoverAddress(namespace, pool, inUseIPSet, kubevipLBConfig)
 	}
 
 	if err == nil {
@@ -465,7 +465,7 @@ func discoverFromPool(namespace, pool, preferredIpv4ServiceIP, ipv4Pool string, 
 	return nil, err
 }
 
-func discoverVIPsDualStack(namespace, ipv4Pool, ipv6Pool string, preferredIpv4ServiceIP string, inUseIPSet *netipx.IPSet, descOrder bool,
+func discoverVIPsDualStack(namespace, ipv4Pool, ipv6Pool string, preferredIpv4ServiceIP string, inUseIPSet *netipx.IPSet, kubevipLBConfig *config.KubevipLBConfig,
 	ipFamilyPolicy *v1.IPFamilyPolicy, ipFamilies []v1.IPFamily) (vips string, err error) {
 
 	var vipList []string
@@ -490,14 +490,14 @@ func discoverVIPsDualStack(namespace, ipv4Pool, ipv6Pool string, preferredIpv4Se
 	var primaryPoolErr, secondaryPoolErr error
 
 	if len(primaryPool) > 0 {
-		primaryPoolErr, err = discoverFromPool(namespace, primaryPool, preferredIpv4ServiceIP, ipv4Pool, inUseIPSet, descOrder, &vipList)
+		primaryPoolErr, err = discoverFromPool(namespace, primaryPool, preferredIpv4ServiceIP, ipv4Pool, inUseIPSet, kubevipLBConfig, &vipList)
 		if err != nil {
 			return "", err
 		}
 	}
 
 	if len(secondaryPool) > 0 {
-		secondaryPoolErr, err = discoverFromPool(namespace, secondaryPool, preferredIpv4ServiceIP, ipv4Pool, inUseIPSet, descOrder, &vipList)
+		secondaryPoolErr, err = discoverFromPool(namespace, secondaryPool, preferredIpv4ServiceIP, ipv4Pool, inUseIPSet, kubevipLBConfig, &vipList)
 		if err != nil {
 			return "", err
 		}
@@ -524,7 +524,7 @@ func discoverVIPsDualStack(namespace, ipv4Pool, ipv6Pool string, preferredIpv4Se
 }
 
 func discoverVIPs(
-	namespace, pool, preferredIpv4ServiceIP string, inUseIPSet *netipx.IPSet, descOrder bool,
+	namespace, pool, preferredIpv4ServiceIP string, inUseIPSet *netipx.IPSet, kubevipLBConfig *config.KubevipLBConfig,
 	ipFamilyPolicy *v1.IPFamilyPolicy, ipFamilies []v1.IPFamily,
 ) (vips string, err error) {
 	var ipv4Pool, ipv6Pool string
@@ -545,23 +545,23 @@ func discoverVIPs(
 	}
 
 	if ipFamilyPolicy == nil || *ipFamilyPolicy == v1.IPFamilyPolicySingleStack {
-		return discoverVIPsSingleStack(namespace, ipv4Pool, ipv6Pool, preferredIpv4ServiceIP, inUseIPSet, descOrder, ipFamilies)
+		return discoverVIPsSingleStack(namespace, ipv4Pool, ipv6Pool, preferredIpv4ServiceIP, inUseIPSet, kubevipLBConfig, ipFamilies)
 	}
-	return discoverVIPsDualStack(namespace, ipv4Pool, ipv6Pool, preferredIpv4ServiceIP, inUseIPSet, descOrder, ipFamilyPolicy, ipFamilies)
+	return discoverVIPsDualStack(namespace, ipv4Pool, ipv6Pool, preferredIpv4ServiceIP, inUseIPSet, kubevipLBConfig, ipFamilyPolicy, ipFamilies)
 }
 
-func discoverAddress(namespace, pool string, inUseIPSet *netipx.IPSet, descOrder bool) (vip string, err error) {
+func discoverAddress(namespace, pool string, inUseIPSet *netipx.IPSet, kubevipLBConfig *config.KubevipLBConfig) (vip string, err error) {
 	// Check if DHCP is required
 	if pool == "0.0.0.0/32" {
 		vip = "0.0.0.0"
 		// Check if ip pool contains a cidr, if not assume it is a range
 	} else if strings.Contains(pool, "/") {
-		vip, err = ipam.FindAvailableHostFromCidr(namespace, pool, inUseIPSet, descOrder)
+		vip, err = ipam.FindAvailableHostFromCidr(namespace, pool, inUseIPSet, kubevipLBConfig)
 		if err != nil {
 			return "", err
 		}
 	} else {
-		vip, err = ipam.FindAvailableHostFromRange(namespace, pool, inUseIPSet, descOrder)
+		vip, err = ipam.FindAvailableHostFromRange(namespace, pool, inUseIPSet, kubevipLBConfig)
 		if err != nil {
 			return "", err
 		}
@@ -572,15 +572,6 @@ func discoverAddress(namespace, pool string, inUseIPSet *netipx.IPSet, descOrder
 
 func getKubevipImplementationLabel() string {
 	return fmt.Sprintf("%s=%s", ImplementationLabelKey, ImplementationLabelValue)
-}
-
-func getSearchOrder(cm *v1.ConfigMap) (descOrder bool) {
-	if searchOrder, ok := cm.Data[ConfigMapSearchOrderKey]; ok {
-		if searchOrder == "desc" {
-			return true
-		}
-	}
-	return false
 }
 
 func renderErrors(errs ...error) string {
@@ -596,11 +587,11 @@ func renderErrors(errs ...error) string {
 // found interface of that service from configmap.
 // if not found, return ""
 func discoverInterface(cm *v1.ConfigMap, svcNS string) string {
-	if interfaceName, ok := cm.Data[fmt.Sprintf("%s-%s", ConfigMapServiceInterfacePrefix, svcNS)]; ok {
+	if interfaceName, ok := cm.Data[fmt.Sprintf("%s-%s", config.ConfigMapServiceInterfacePrefix, svcNS)]; ok {
 		return interfaceName
 	}
 	// fall back to global interface
-	if interfaceName, ok := cm.Data[fmt.Sprintf("%s-global", ConfigMapServiceInterfacePrefix)]; ok {
+	if interfaceName, ok := cm.Data[fmt.Sprintf("%s-global", config.ConfigMapServiceInterfacePrefix)]; ok {
 		return interfaceName
 	}
 
