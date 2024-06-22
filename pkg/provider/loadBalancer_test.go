@@ -738,7 +738,7 @@ func Test_syncLoadBalancer(t *testing.T) {
 						"implementation": "kube-vip",
 					},
 					Annotations: map[string]string{
-						"kube-vip.io/loadbalancerIPs": "192.168.1.1",
+						LoadbalancerIPsAnnotation: "192.168.1.1",
 					},
 				},
 				Spec: v1.ServiceSpec{
@@ -772,7 +772,7 @@ func Test_syncLoadBalancer(t *testing.T) {
 						"implementation": "kube-vip",
 					},
 					Annotations: map[string]string{
-						"kube-vip.io/loadbalancerIPs": "192.168.1.1",
+						LoadbalancerIPsAnnotation: "192.168.1.1",
 					},
 				},
 				Spec: v1.ServiceSpec{
@@ -787,7 +787,7 @@ func Test_syncLoadBalancer(t *testing.T) {
 					Namespace: "test",
 					Name:      "name",
 					Annotations: map[string]string{
-						"kube-vip.io/loadbalancerIPs": "192.168.1.1",
+						LoadbalancerIPsAnnotation: "192.168.1.1",
 					},
 				},
 			},
@@ -799,7 +799,7 @@ func Test_syncLoadBalancer(t *testing.T) {
 						"implementation": "kube-vip",
 					},
 					Annotations: map[string]string{
-						"kube-vip.io/loadbalancerIPs": "192.168.1.1",
+						LoadbalancerIPsAnnotation: "192.168.1.1",
 					},
 				},
 			},
@@ -830,7 +830,7 @@ func Test_syncLoadBalancer(t *testing.T) {
 						"implementation": "kube-vip",
 					},
 					Annotations: map[string]string{
-						"kube-vip.io/loadbalancerIPs": "fe80::10",
+						LoadbalancerIPsAnnotation: "fe80::10",
 					},
 				},
 				Spec: v1.ServiceSpec{
@@ -864,7 +864,7 @@ func Test_syncLoadBalancer(t *testing.T) {
 						"implementation": "kube-vip",
 					},
 					Annotations: map[string]string{
-						"kube-vip.io/loadbalancerIPs": "192.168.1.1",
+						LoadbalancerIPsAnnotation: "192.168.1.1",
 					},
 				},
 				Spec: v1.ServiceSpec{
@@ -902,13 +902,120 @@ func Test_syncLoadBalancer(t *testing.T) {
 						"implementation": "kube-vip",
 					},
 					Annotations: map[string]string{
-						"kube-vip.io/loadbalancerIPs": "fe80::10,10.120.120.1",
+						LoadbalancerIPsAnnotation: "fe80::10,10.120.120.1",
 					},
 				},
 				Spec: v1.ServiceSpec{
 					IPFamilyPolicy: ipFamilyPolicyPtr(v1.IPFamilyPolicyRequireDualStack),
 					IPFamilies:     []v1.IPFamily{v1.IPv6Protocol, v1.IPv4Protocol},
 					LoadBalancerIP: "fe80::10",
+				},
+			},
+		},
+		{
+			name: "service interface defined in global, service gets the interface config",
+			originalService: v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test",
+					Name:      "name",
+				},
+				Spec: v1.ServiceSpec{},
+			},
+			poolConfigMap: &v1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      KubeVipClientConfig,
+					Namespace: KubeVipClientConfigNamespace,
+				},
+				Data: map[string]string{
+					"cidr-global":      "192.168.1.1/24",
+					"interface-global": "eth0",
+				},
+			},
+			expectedService: v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test",
+					Name:      "name",
+					Labels: map[string]string{
+						"implementation": "kube-vip",
+					},
+					Annotations: map[string]string{
+						LoadbalancerIPsAnnotation:                 "192.168.1.1",
+						LoadbalancerServiceInterfaceAnnotationKey: "eth0",
+					},
+				},
+				Spec: v1.ServiceSpec{
+					LoadBalancerIP: "192.168.1.1",
+				},
+			},
+		},
+		{
+			name: "service interface defined in service's namespace, service gets the interface config",
+			originalService: v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test",
+					Name:      "name",
+				},
+				Spec: v1.ServiceSpec{},
+			},
+			poolConfigMap: &v1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      KubeVipClientConfig,
+					Namespace: KubeVipClientConfigNamespace,
+				},
+				Data: map[string]string{
+					"cidr-global":    "192.168.1.1/24",
+					"interface-test": "eth0",
+				},
+			},
+			expectedService: v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test",
+					Name:      "name",
+					Labels: map[string]string{
+						"implementation": "kube-vip",
+					},
+					Annotations: map[string]string{
+						LoadbalancerIPsAnnotation:                 "192.168.1.1",
+						LoadbalancerServiceInterfaceAnnotationKey: "eth0",
+					},
+				},
+				Spec: v1.ServiceSpec{
+					LoadBalancerIP: "192.168.1.1",
+				},
+			},
+		},
+		{
+			name: "service interface not defined in service's namespace, service doesn't get the interface config",
+			originalService: v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test",
+					Name:      "name",
+				},
+				Spec: v1.ServiceSpec{},
+			},
+			poolConfigMap: &v1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      KubeVipClientConfig,
+					Namespace: KubeVipClientConfigNamespace,
+				},
+				Data: map[string]string{
+					"cidr-global":    "192.168.1.1/24",
+					"interface-what": "eth0",
+				},
+			},
+			expectedService: v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test",
+					Name:      "name",
+					Labels: map[string]string{
+						"implementation": "kube-vip",
+					},
+					Annotations: map[string]string{
+						LoadbalancerIPsAnnotation: "192.168.1.1",
+					},
+				},
+				Spec: v1.ServiceSpec{
+					LoadBalancerIP: "192.168.1.1",
 				},
 			},
 		},

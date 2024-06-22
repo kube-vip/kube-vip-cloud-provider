@@ -15,6 +15,6 @@ func ServiceIsReconciled(svc *core_v1.Service) bool {
 }
 
 func ServiceHasIPAssigned(svc *core_v1.Service) bool {
-	return svc.Annotations[provider.LoadbalancerIPsAnnotations] != "" &&
+	return svc.Annotations[provider.LoadbalancerIPsAnnotation] != "" &&
 		svc.Spec.LoadBalancerIP != ""
 }
