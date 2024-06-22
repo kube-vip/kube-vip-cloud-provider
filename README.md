@@ -10,7 +10,7 @@ The `kube-vip-cloud-provider` will only implement the `loadBalancer` functionali
 
 ## IP address functionality
 
-- IP address pools by CIDR (excluding the network(first) address and broadcast(last) address)
+- IP address pools by CIDR
 - IP ranges [start address - end address]
 - Multiple pools by CIDR per namespace
 - Multiple IP ranges per namespace (handles overlapping ranges)
@@ -23,7 +23,7 @@ The `kube-vip-cloud-provider` will only implement the `loadBalancer` functionali
 - Support loadbalancerClass `kube-vip.io/kube-vip-class`
 - Support assigning multiple services on single VIP (IPv4 only, optional)
 - Support specifying service interface per namespace or at global level
-- Support exlucding first and last ip from cidr
+- Support excluding first and last ip from cidr
 
 ## Installing the `kube-vip-cloud-provider`
 
