@@ -23,6 +23,7 @@ The `kube-vip-cloud-provider` will only implement the `loadBalancer` functionali
 - Support loadbalancerClass `kube-vip.io/kube-vip-class`
 - Support assigning multiple services on single VIP (IPv4 only, optional)
 - Support specifying service interface per namespace or at global level
+- Support excluding first and last ip from cidr
 
 ## Installing the `kube-vip-cloud-provider`
 
@@ -146,7 +147,7 @@ If users only want kube-vip-cloud-provider to allocate ip for specific set of se
 
 When enabled, kube-vip-cloud-provider tries to assign services to already used VIPs if the ports of the services
 do not overlap.
-If you want to enable VIP-sharing between services, you can set `allow-shared`-`namespace` to true. It follows the same rules as
+If you want to enable VIP-sharing between services, you can set `allow-share`-`namespace` to true. It follows the same rules as
 the configuration for global and namespace pools.
 
 Example-object with sharing enabled for namespace `development`:
@@ -164,7 +165,7 @@ data:
   allow-share-development: true
 ```
 
-### Namespace pool
+### Specify namespace scoped service interface
 
 Kube-vip 0.8.0 supports `kube-vip.io/serviceInterface` annotation on service type LB. Now user can specify a ip range/cidr at namespace level, we would assume these ips within a namespace should share the same interface, then we support specifying interface per namespace level by
 
@@ -183,7 +184,30 @@ data:
   interface-default: eth5
 ```
 
-`interface-global` could be used to specify all ips would use this ip address. If there is no interface specified for a namespace, it will fall back to this `interface-global`. But this is usually not needed since kube-vip has `vip_servicesinterface` for user to define default interface for service type LB.
+`interface-global` could be used to specify all services under all namespace would use this ip interface. If there is no interface specified for a namespace, it will fall back to this `interface-global`. But this is usually not needed since kube-vip has `vip_servicesinterface` for user to define default interface for service type LB.
+
+
+## Exclude first and last ip from cidr
+
+By default, when specifying cidr-<namespace>, all ips within that cidr will be allocated to service type lb. But in some case that
+the first IP might be used for network ip and last ip might be used for broadcast ip, and user might no want to alloacte those to a service type LB. In
+this case, the user could specify skip-end-ips-in-cidr: true in the configmap to skip the first and last ip for cidr.
+
+Example object:
+```
+$ kubectl get configmap -n kube-system kubevip -o yaml
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kubevip
+  namespace: kube-system
+data:
+  cidr-default: 192.168.0.200/29
+  skip-end-ips-in-cidr: true
+```
+
+In this case, only ips `192.168.0.201-192.168.0.206` will be allocated to service, `192.168.0.200` and `192.168.0.207` are excluded.
 
 ## Debugging
 

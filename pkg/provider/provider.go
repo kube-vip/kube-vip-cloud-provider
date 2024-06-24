@@ -39,12 +39,6 @@ const (
 
 	// EnableLoadbalancerClassEnvKey environment key for enabling loadbalancerclass.
 	EnableLoadbalancerClassEnvKey = "KUBEVIP_ENABLE_LOADBALANCERCLASS"
-
-	// ConfigMapSearchOrderKey is the key in the ConfigMap that specifying the search order of finding IPs
-	ConfigMapSearchOrderKey = "search-order"
-
-	// ConfigMapServiceInterfacePrefix is prefix of the key in the ConfigMap for specifying the service interface for that namespace
-	ConfigMapServiceInterfacePrefix = "interface"
 )
 
 func init() {

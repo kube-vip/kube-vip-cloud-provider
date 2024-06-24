@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/netip"
 
+	"github.com/kube-vip/kube-vip-cloud-provider/pkg/config"
 	"go4.org/netipx"
 	"k8s.io/klog"
 )
@@ -41,7 +42,7 @@ type ipManager struct {
 }
 
 // FindAvailableHostFromRange - will look through the cidr and the address Manager and find a free address (if possible)
-func FindAvailableHostFromRange(namespace, ipRange string, inUseIPSet *netipx.IPSet, descOrder bool) (string, error) {
+func FindAvailableHostFromRange(namespace, ipRange string, inUseIPSet *netipx.IPSet, kubevipLBConfig *config.KubevipLBConfig) (string, error) {
 	// Look through namespaces and update one if it exists
 	for x := range Manager {
 		if Manager[x].namespace == namespace {
@@ -58,7 +59,7 @@ func FindAvailableHostFromRange(namespace, ipRange string, inUseIPSet *netipx.IP
 				Manager[x].ipRange = ipRange
 			}
 
-			addr, err := FindFreeAddress(Manager[x].poolIPSet, inUseIPSet, descOrder)
+			addr, err := FindFreeAddress(Manager[x].poolIPSet, inUseIPSet, kubevipLBConfig)
 			if err != nil {
 				return "", &OutOfIPsError{namespace: namespace, pool: ipRange, isCidr: false}
 			}
@@ -79,7 +80,7 @@ func FindAvailableHostFromRange(namespace, ipRange string, inUseIPSet *netipx.IP
 
 	Manager = append(Manager, newManager)
 
-	addr, err := FindFreeAddress(poolIPSet, inUseIPSet, descOrder)
+	addr, err := FindFreeAddress(poolIPSet, inUseIPSet, kubevipLBConfig)
 	if err != nil {
 		return "", &OutOfIPsError{namespace: namespace, pool: ipRange, isCidr: false}
 	}
@@ -87,30 +88,28 @@ func FindAvailableHostFromRange(namespace, ipRange string, inUseIPSet *netipx.IP
 }
 
 // FindAvailableHostFromCidr - will look through the cidr and the address Manager and find a free address (if possible)
-func FindAvailableHostFromCidr(namespace, cidr string, inUseIPSet *netipx.IPSet, descOrder bool) (string, error) {
+func FindAvailableHostFromCidr(namespace, cidr string, inUseIPSet *netipx.IPSet, kubevipLBConfig *config.KubevipLBConfig) (string, error) {
 	// Look through namespaces and update one if it exists
 	for x := range Manager {
 		if Manager[x].namespace == namespace {
 			// Check that the address range is the same
 			if Manager[x].cidr != cidr {
 				// If not rebuild the available hosts
-				poolIPSet, err := buildHostsFromCidr(cidr)
+				poolIPSet, err := buildHostsFromCidr(cidr, kubevipLBConfig)
 				if err != nil {
 					return "", err
 				}
 				Manager[x].poolIPSet = poolIPSet
 				Manager[x].cidr = cidr
-
 			}
-			addr, err := FindFreeAddress(Manager[x].poolIPSet, inUseIPSet, descOrder)
+			addr, err := FindFreeAddress(Manager[x].poolIPSet, inUseIPSet, kubevipLBConfig)
 			if err != nil {
 				return "", &OutOfIPsError{namespace: namespace, pool: cidr, isCidr: true}
 			}
 			return addr.String(), nil
-
 		}
 	}
-	poolIPSet, err := buildHostsFromCidr(cidr)
+	poolIPSet, err := buildHostsFromCidr(cidr, kubevipLBConfig)
 	if err != nil {
 		return "", err
 	}
@@ -122,7 +121,7 @@ func FindAvailableHostFromCidr(namespace, cidr string, inUseIPSet *netipx.IPSet,
 	}
 	Manager = append(Manager, newManager)
 
-	addr, err := FindFreeAddress(poolIPSet, inUseIPSet, descOrder)
+	addr, err := FindFreeAddress(poolIPSet, inUseIPSet, kubevipLBConfig)
 	if err != nil {
 		return "", &OutOfIPsError{namespace: namespace, pool: cidr, isCidr: true}
 	}
@@ -152,8 +151,8 @@ func FindAvailableHostFromCidr(namespace, cidr string, inUseIPSet *netipx.IPSet,
 
 // FindFreeAddress returns the next free IP Address in a range based on a set of existing addresses.
 // It will skip assumed gateway ip or broadcast ip for IPv4 address
-func FindFreeAddress(poolIPSet *netipx.IPSet, inUseIPSet *netipx.IPSet, descOrder bool) (netip.Addr, error) {
-	if descOrder {
+func FindFreeAddress(poolIPSet *netipx.IPSet, inUseIPSet *netipx.IPSet, kubevipLBConfig *config.KubevipLBConfig) (netip.Addr, error) {
+	if kubevipLBConfig != nil && kubevipLBConfig.ReturnIPInDescOrder {
 		ipranges := poolIPSet.Ranges()
 		for i := range len(ipranges) {
 			iprange := ipranges[len(ipranges)-1-i]
