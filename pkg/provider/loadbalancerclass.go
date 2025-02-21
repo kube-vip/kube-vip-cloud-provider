@@ -35,7 +35,7 @@ type loadbalancerClassServiceController struct {
 	serviceListerSynced cache.InformerSynced
 
 	recorder  record.EventRecorder
-	workqueue workqueue.RateLimitingInterface
+	workqueue workqueue.TypedRateLimitingInterface[any]
 
 	cmName      string
 	cmNamespace string
@@ -57,7 +57,7 @@ func newLoadbalancerClassServiceController(
 		kubeClient:          kubeClient,
 
 		recorder:  recorder,
-		workqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "Services"),
+		workqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[any](), "Services"),
 
 		cmName:      cmName,
 		cmNamespace: cmNamespace,

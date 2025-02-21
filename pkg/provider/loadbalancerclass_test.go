@@ -37,7 +37,7 @@ func newController(kubeClient *fake.Clientset) *loadbalancerClassServiceControll
 		cmNamespace:         KubeVipClientConfigNamespace,
 
 		recorder:  record.NewFakeRecorder(100),
-		workqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "Nodes"),
+		workqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[any](), "Nodes"),
 	}
 	kubeClient.ClearActions()
 	return c
