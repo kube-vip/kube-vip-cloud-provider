@@ -6,7 +6,7 @@ on:
   pull_request:
 
 env:
-  GO_VERSION: 1.22
+  GO_VERSION: 1.24
 jobs:
   lint:
     runs-on: ubuntu-latest
@@ -19,7 +19,7 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
-          version: v1.56.2
+          version: v1.64.5
           args: --out-format=colored-line-number
   test-linux:
     runs-on: ubuntu-latest

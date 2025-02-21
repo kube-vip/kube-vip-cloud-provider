@@ -1,6 +1,6 @@
 module github.com/kube-vip/kube-vip-cloud-provider
 
-go 1.22
+go 1.23.1
 
 require (
 	github.com/onsi/ginkgo/v2 v2.20.1
