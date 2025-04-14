@@ -41,6 +41,10 @@ var _ = BeforeSuite(func() {
 			Name:  provider.EnableLoadbalancerClassEnvKey,
 			Value: "true",
 		},
+		core_v1.EnvVar{
+			Name:  provider.CustomLoadbalancerClassEnvKey,
+			Value: "kube-vip.io/custom-class",
+		},
 	)
 	require.NoError(f.T(), f.Deployment.EnsureResources())
 })

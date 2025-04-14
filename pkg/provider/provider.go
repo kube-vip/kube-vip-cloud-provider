@@ -33,13 +33,18 @@ const (
 	// KubeVipServicesKey is the key in the ConfigMap that has the services configuration
 	KubeVipServicesKey = "kubevip-services"
 
-	// LoadbalancerClass is the value that could be set in service.spec.loadbalancerclass
-	// if the service has this value, then service controller will reconcile the service.
-	LoadbalancerClass = "kube-vip.io/kube-vip-class"
+	// CustomLoadbalancerClassEnvKey environment key for custom loadbalancerclass name.
+	// A LoadbalancerClass could be set in service.spec.loadbalancerclass. if the service has this value, 
+	// then service controller will reconcile the service
+	CustomLoadbalancerClassEnvKey = "KUBEVIP_CUSTOM_LOADBALANCERCLASS_NAME"
+
+	// DefaultLoadbalancerClass is the default loadbalancerClass name if no custom loadbalancerClass name is 
+	// supplied by CustomLoadbalancerClassEnvKey
+	DefaultLoadbalancerClass = "kube-vip.io/kube-vip-class"
 
 	// EnableLoadbalancerClassEnvKey environment key for enabling loadbalancerclass.
-	EnableLoadbalancerClassEnvKey = "KUBEVIP_ENABLE_LOADBALANCERCLASS"
-)
+	// This should be enabled if CustomLoadbalancerClassNameEnvKey is not empty
+	EnableLoadbalancerClassEnvKey = "KUBEVIP_ENABLE_LOADBALANCERCLASS")
 
 func init() {
 	cloudprovider.RegisterCloudProvider(ProviderName, newKubeVipCloudProvider)
@@ -52,6 +57,7 @@ type KubeVipCloudProvider struct {
 	namespace     string
 	configMapName string
 	enableLBClass bool
+	lbClass       string
 }
 
 var _ cloudprovider.Interface = &KubeVipCloudProvider{}
@@ -60,6 +66,7 @@ func newKubeVipCloudProvider(io.Reader) (cloudprovider.Interface, error) {
 	ns := os.Getenv("KUBEVIP_NAMESPACE")
 	cm := os.Getenv("KUBEVIP_CONFIG_MAP")
 	lbc := os.Getenv(EnableLoadbalancerClassEnvKey)
+	cbc := os.Getenv(CustomLoadbalancerClassEnvKey)
 
 	if cm == "" {
 		cm = KubeVipClientConfig
@@ -71,6 +78,7 @@ func newKubeVipCloudProvider(io.Reader) (cloudprovider.Interface, error) {
 
 	var (
 		enableLBClass bool
+		lbClass       string
 		err           error
 	)
 
@@ -81,7 +89,14 @@ func newKubeVipCloudProvider(io.Reader) (cloudprovider.Interface, error) {
 			return nil, fmt.Errorf("error parsing value of %s: %s", EnableLoadbalancerClassEnvKey, err.Error())
 		}
 	}
-	klog.Infof("staring with loadbalancerClass set to: %t", enableLBClass)
+	klog.Infof("starting with enable loadbalancerClass flag set to: %t", enableLBClass)
+
+	if cbc != "" {
+		lbClass = cbc
+	} else {
+		lbClass = DefaultLoadbalancerClass
+	}
+	klog.Infof("loadbalancerClass value set to: %s", lbClass)
 
 	klog.Infof("Watching configMap for pool config with name: '%s', namespace: '%s'", cm, ns)
 
@@ -108,11 +123,12 @@ func newKubeVipCloudProvider(io.Reader) (cloudprovider.Interface, error) {
 		}
 	}
 	return &KubeVipCloudProvider{
-		lb:            newLoadBalancer(cl, ns, cm),
+		lb:            newLoadBalancer(cl, ns, cm, lbClass),
 		kubeClient:    cl,
 		namespace:     ns,
 		configMapName: cm,
 		enableLBClass: enableLBClass,
+		lbClass:       lbClass,
 	}, nil
 }
 
@@ -124,9 +140,9 @@ func (p *KubeVipCloudProvider) Initialize(clientBuilder cloudprovider.Controller
 	sharedInformer := informers.NewSharedInformerFactory(clientset, 0)
 
 	if p.enableLBClass {
-		klog.Info("staring a separate service controller that only monitors service with loadbalancerClass")
+		klog.Info("starting a separate service controller that only monitors service with loadbalancerClass")
 		klog.Info("default cloud-provider service controller will ignore service with loadbalancerClass")
-		controller := newLoadbalancerClassServiceController(sharedInformer, p.kubeClient, p.configMapName, p.namespace)
+		controller := newLoadbalancerClassServiceController(sharedInformer, p.kubeClient, p.configMapName, p.namespace, p.lbClass)
 		go controller.Run(context.Background().Done())
 	}
 
