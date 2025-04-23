@@ -91,7 +91,11 @@ func newKubeVipCloudProvider(io.Reader) (cloudprovider.Interface, error) {
 	}
 	klog.Infof("starting with enable loadbalancerClass flag set to: %t", enableLBClass)
 
+	lbClass = DefaultLoadbalancerClass
 	if cbc != "" {
+		lbClass = cbc
+	}
+
 		lbClass = cbc
 	} else {
 		lbClass = DefaultLoadbalancerClass
