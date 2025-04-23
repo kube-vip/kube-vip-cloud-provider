@@ -95,11 +95,6 @@ func newKubeVipCloudProvider(io.Reader) (cloudprovider.Interface, error) {
 	if cbc != "" {
 		lbClass = cbc
 	}
-
-		lbClass = cbc
-	} else {
-		lbClass = DefaultLoadbalancerClass
-	}
 	klog.Infof("loadbalancerClass value set to: %s", lbClass)
 
 	klog.Infof("Watching configMap for pool config with name: '%s', namespace: '%s'", cm, ns)
