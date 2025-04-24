@@ -342,16 +342,16 @@ func TestWantsLoadBalancer(t *testing.T) {
 		expect  bool
 	}{
 		{
-			desc: "service match load balancer class",
+			desc:    "service match load balancer class",
 			service: tu.NewService("basic-service1", tu.TweakDualStack(), tu.TweakAddPorts(corev1.ProtocolTCP, 345, 345), tu.TweakAddLBClass(ptr.To("test-class"))),
 			lbClass: "test-class",
-			expect: true,
+			expect:  true,
 		},
 		{
-			desc: "service mismatch load balancer class",
+			desc:    "service mismatch load balancer class",
 			service: tu.NewService("basic-service1", tu.TweakDualStack(), tu.TweakAddPorts(corev1.ProtocolTCP, 345, 345), tu.TweakAddLBClass(ptr.To("nok-class"))),
 			lbClass: "test-class",
-			expect: false,
+			expect:  false,
 		},
 	}
 	for _, tc := range testCases {

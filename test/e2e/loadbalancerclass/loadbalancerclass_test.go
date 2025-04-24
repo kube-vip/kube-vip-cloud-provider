@@ -62,7 +62,7 @@ var _ = Describe("Loadbalancerclass enabled", func() {
 			Specify("Service not be reconcile if namespace is not configured namespace testing, service in default namespace should be reconciled", func() {
 				ctx := context.TODO()
 				By("Create a service type LB in namespace that's not testing")
-				svc := tu.NewService("test1", tu.TweakNamespace(namespace), tu.TweakAddLBClass(ptr.To(provider.LoadbalancerClass)))
+				svc := tu.NewService("test1", tu.TweakNamespace(namespace), tu.TweakAddLBClass(ptr.To(provider.DefaultLoadbalancerClass)))
 				_, err := f.Client.CoreV1().Services(svc.Namespace).Create(ctx, svc, meta_v1.CreateOptions{})
 				require.NoError(f.T(), err)
 
@@ -77,7 +77,7 @@ var _ = Describe("Loadbalancerclass enabled", func() {
 
 				for _, ns := range watchedNamespaces {
 					By("Create a service type LB in watched namespace")
-					svc = tu.NewService(fmt.Sprintf("test-%s", ns), tu.TweakNamespace(ns), tu.TweakAddLBClass(ptr.To(provider.LoadbalancerClass)))
+					svc = tu.NewService(fmt.Sprintf("test-%s", ns), tu.TweakNamespace(ns), tu.TweakAddLBClass(ptr.To(provider.DefaultLoadbalancerClass)))
 					_, err = f.Client.CoreV1().Services(svc.Namespace).Create(ctx, svc, meta_v1.CreateOptions{})
 					require.NoError(f.T(), err)
 

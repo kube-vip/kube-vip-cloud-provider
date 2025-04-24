@@ -34,17 +34,18 @@ const (
 	KubeVipServicesKey = "kubevip-services"
 
 	// CustomLoadbalancerClassEnvKey environment key for custom loadbalancerclass name.
-	// A LoadbalancerClass could be set in service.spec.loadbalancerclass. if the service has this value, 
-	// then service controller will reconcile the service
+	// A LoadbalancerClass could be set in service.spec.loadbalancerclass.
+	// If the service has this value, then service controller will reconcile the service.
 	CustomLoadbalancerClassEnvKey = "KUBEVIP_CUSTOM_LOADBALANCERCLASS_NAME"
 
-	// DefaultLoadbalancerClass is the default loadbalancerClass name if no custom loadbalancerClass name is 
+	// DefaultLoadbalancerClass is the default loadbalancerClass name if no custom loadbalancerClass name is
 	// supplied by CustomLoadbalancerClassEnvKey
 	DefaultLoadbalancerClass = "kube-vip.io/kube-vip-class"
 
 	// EnableLoadbalancerClassEnvKey environment key for enabling loadbalancerclass.
 	// This should be enabled if CustomLoadbalancerClassNameEnvKey is not empty
-	EnableLoadbalancerClassEnvKey = "KUBEVIP_ENABLE_LOADBALANCERCLASS")
+	EnableLoadbalancerClassEnvKey = "KUBEVIP_ENABLE_LOADBALANCERCLASS"
+)
 
 func init() {
 	cloudprovider.RegisterCloudProvider(ProviderName, newKubeVipCloudProvider)
