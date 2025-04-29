@@ -1,2 +1,3 @@
 # Compiled tests from Ginkgo
 *.test
+kube-vip-cloud-provider

@@ -24,6 +24,7 @@ The `kube-vip-cloud-provider` will only implement the `loadBalancer` functionali
 - Support assigning multiple services on single VIP (IPv4 only, optional)
 - Support specifying service interface per namespace or at global level
 - Support excluding first and last ip from cidr
+- Support custom loadbalancerClass name
 
 ## Installing the `kube-vip-cloud-provider`
 
@@ -142,6 +143,8 @@ Set the CIDR to `0.0.0.0/32`, that will make the controller to give all _LoadBal
 ## LoadbalancerClass support
 
 If users only want kube-vip-cloud-provider to allocate ip for specific set of services, they can pass `KUBEVIP_ENABLE_LOADBALANCERCLASS: true` as an environment variable to kube-vip-cloud-provider. kube-vip-cloud-provider will only allocate ip to service with `spec.loadBalancerClass: kube-vip.io/kube-vip-class`.
+
+If users want to use a custom loadbalancerClass name, they can pass `KUBEVIP_CUSTOM_LOADBALANCERCLASS_NAME: <custom name>` as an environment variable, with setting `KUBEVIP_ENABLE_LOADBALANCERCLASS: true`. They set `spec.loadBalancerClass: <custom name>` on the service.
 
 ## Allow multiple IPv4 services to share a VIP
 

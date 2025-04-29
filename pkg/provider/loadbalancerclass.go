@@ -39,12 +39,13 @@ type loadbalancerClassServiceController struct {
 
 	cmName      string
 	cmNamespace string
+	lbClass     string
 }
 
 func newLoadbalancerClassServiceController(
 	sharedInformer informers.SharedInformerFactory,
 	kubeClient kubernetes.Interface,
-	cmName, cmNamespace string,
+	cmName, cmNamespace, lbClass string,
 ) *loadbalancerClassServiceController {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(klog.Infof)
@@ -61,18 +62,19 @@ func newLoadbalancerClassServiceController(
 
 		cmName:      cmName,
 		cmNamespace: cmNamespace,
+		lbClass:     lbClass,
 	}
 
 	_, _ = serviceInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(cur interface{}) {
-			if svc, ok := cur.(*corev1.Service); ok && wantsLoadBalancer(svc) {
+			if svc, ok := cur.(*corev1.Service); ok && wantsLoadBalancer(svc, lbClass) {
 				c.enqueueService(svc)
 			}
 		},
 		UpdateFunc: func(old interface{}, cur interface{}) {
 			oldSvc, ok1 := old.(*corev1.Service)
 			curSvc, ok2 := cur.(*corev1.Service)
-			if ok1 && ok2 && wantsLoadBalancer(curSvc) && (c.needsUpdate(oldSvc, curSvc) || needsCleanup(curSvc)) {
+			if ok1 && ok2 && wantsLoadBalancer(curSvc, lbClass) && (c.needsUpdate(oldSvc, curSvc) || needsCleanup(curSvc)) {
 				c.enqueueService(curSvc)
 			}
 		},
@@ -251,7 +253,7 @@ func (c *loadbalancerClassServiceController) removeFinalizer(service *corev1.Ser
 
 // needsUpdate checks if load balancer needs to be updated due to change in attributes.
 func (c *loadbalancerClassServiceController) needsUpdate(oldService *corev1.Service, newService *corev1.Service) bool {
-	if wantsLoadBalancer(newService) && !reflect.DeepEqual(oldService.Spec.LoadBalancerSourceRanges, newService.Spec.LoadBalancerSourceRanges) {
+	if wantsLoadBalancer(newService, c.lbClass) && !reflect.DeepEqual(oldService.Spec.LoadBalancerSourceRanges, newService.Spec.LoadBalancerSourceRanges) {
 		c.recorder.Eventf(newService, corev1.EventTypeNormal, "LoadBalancerSourceRanges", "%v -> %v",
 			oldService.Spec.LoadBalancerSourceRanges, newService.Spec.LoadBalancerSourceRanges)
 		return true
@@ -313,8 +315,8 @@ func (c *loadbalancerClassServiceController) needsUpdate(oldService *corev1.Serv
 }
 
 // only return service that's service type loadbalancer and loadbalancerclass match
-func wantsLoadBalancer(svc *corev1.Service) bool {
-	return svc != nil && svc.Spec.Type == corev1.ServiceTypeLoadBalancer && svc.Spec.LoadBalancerClass != nil && *svc.Spec.LoadBalancerClass == LoadbalancerClass
+func wantsLoadBalancer(svc *corev1.Service, loadbalancerClass string) bool {
+	return svc != nil && svc.Spec.Type == corev1.ServiceTypeLoadBalancer && svc.Spec.LoadBalancerClass != nil && *svc.Spec.LoadBalancerClass == loadbalancerClass
 }
 
 // removeString returns a newly created []string that contains all items from slice that
