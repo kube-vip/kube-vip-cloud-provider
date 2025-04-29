@@ -41,16 +41,18 @@ const (
 
 // kubevipLoadBalancerManager -
 type kubevipLoadBalancerManager struct {
-	kubeClient     kubernetes.Interface
-	namespace      string
-	cloudConfigMap string
+	kubeClient        kubernetes.Interface
+	namespace         string
+	cloudConfigMap    string
+	loadbalancerClass string
 }
 
-func newLoadBalancer(kubeClient kubernetes.Interface, ns, cm string) cloudprovider.LoadBalancer {
+func newLoadBalancer(kubeClient kubernetes.Interface, ns, cm string, lbClass string) cloudprovider.LoadBalancer {
 	k := &kubevipLoadBalancerManager{
-		kubeClient:     kubeClient,
-		namespace:      ns,
-		cloudConfigMap: cm,
+		kubeClient:        kubeClient,
+		namespace:         ns,
+		cloudConfigMap:    cm,
+		loadbalancerClass: lbClass,
 	}
 	return k
 }

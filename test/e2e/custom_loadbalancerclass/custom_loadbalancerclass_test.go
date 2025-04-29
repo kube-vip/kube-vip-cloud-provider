@@ -26,7 +26,7 @@ var f = e2e.NewFramework()
 
 func TestDeployWithLoadBalancerClass(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "deploy with loadbalancerclass")
+	RunSpecs(t, "deploy with custom loadbalancerclass")
 }
 
 var _ = BeforeSuite(func() {
@@ -41,6 +41,11 @@ var _ = BeforeSuite(func() {
 			Name:  provider.EnableLoadbalancerClassEnvKey,
 			Value: "true",
 		},
+		// set custom loadbalancerclass name
+		core_v1.EnvVar{
+			Name:  provider.CustomLoadbalancerClassEnvKey,
+			Value: "kube-vip.io/custom-vip-class",
+		},
 	)
 	require.NoError(f.T(), f.Deployment.EnsureResources())
 })
@@ -52,13 +57,13 @@ var _ = AfterSuite(func() {
 
 var watchedNamespaces = []string{"default", "testing", "plunder"}
 
-var _ = Describe("Loadbalancerclass enabled", func() {
-	Context("Deploy service with loadbalancerclass in different namespaces that kube-vip-cloud-provider is configured to watch and is not configured to watch", func() {
-		f.NamespacedTest("create-services-in-different-namespace-with-loadbalancerclass", func(namespace string) {
+var _ = Describe("Custom loadbalancerclass enabled", func() {
+	Context("Deploy service with custom loadbalancerclass in different namespaces that kube-vip-cloud-provider is configured to watch and is not configured to watch", func() {
+		f.NamespacedTest("create-services-in-different-namespace-with-custom-lbclass", func(namespace string) {
 			Specify("Service not be reconcile if namespace is not configured namespace testing, service in default namespace should be reconciled", func() {
 				ctx := context.TODO()
 				By("Create a service type LB in namespace that's not testing")
-				svc := tu.NewService("test1", tu.TweakNamespace(namespace), tu.TweakAddLBClass(ptr.To(provider.DefaultLoadbalancerClass)))
+				svc := tu.NewService("test1", tu.TweakNamespace(namespace), tu.TweakAddLBClass(ptr.To("kube-vip.io/custom-vip-class")))
 				_, err := f.Client.CoreV1().Services(svc.Namespace).Create(ctx, svc, meta_v1.CreateOptions{})
 				require.NoError(f.T(), err)
 
@@ -73,7 +78,7 @@ var _ = Describe("Loadbalancerclass enabled", func() {
 
 				for _, ns := range watchedNamespaces {
 					By("Create a service type LB in watched namespace")
-					svc = tu.NewService(fmt.Sprintf("test-%s", ns), tu.TweakNamespace(ns), tu.TweakAddLBClass(ptr.To(provider.DefaultLoadbalancerClass)))
+					svc = tu.NewService(fmt.Sprintf("test-%s", ns), tu.TweakNamespace(ns), tu.TweakAddLBClass(ptr.To("kube-vip.io/custom-vip-class")))
 					_, err = f.Client.CoreV1().Services(svc.Namespace).Create(ctx, svc, meta_v1.CreateOptions{})
 					require.NoError(f.T(), err)
 
@@ -101,8 +106,8 @@ var _ = Describe("Loadbalancerclass enabled", func() {
 		}, watchedNamespaces[1:]...) // Don't delete default namespace.
 	})
 
-	Context("Deploy service without loadbalancerclass in different namespaces that kube-vip-cloud-provider is configured to watch", func() {
-		f.NamespacedTest("create-services-namespace-without-loadbalancerclass", func(namespace string) {
+	Context("Deploy service without custom loadbalancerclass in different namespaces that kube-vip-cloud-provider is configured to watch", func() {
+		f.NamespacedTest("create-services-namespace-without-custom-lbclass", func(namespace string) {
 			Specify("Service not be reconcile if service doesn't have loadbalancer class even though namespace is configured to be watched", func() {
 				ctx := context.TODO()
 
