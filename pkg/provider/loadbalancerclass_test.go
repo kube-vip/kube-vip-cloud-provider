@@ -247,7 +247,7 @@ func TestSyncLoadBalancerIfNeededWithMultipleIpUse(t *testing.T) {
 				switch a := action.(type) {
 				case clientgotesting.UpdateActionImpl:
 					s := a.Object.(*corev1.Service)
-					lbIP = s.ObjectMeta.Annotations["kube-vip.io/loadbalancerIPs"]
+					lbIP = s.Annotations["kube-vip.io/loadbalancerIPs"]
 					updateNum++
 				case clientgotesting.PatchActionImpl:
 					patchNum++
