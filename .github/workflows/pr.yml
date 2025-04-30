@@ -19,8 +19,7 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v7
         with:
-          version: v2.1.5
-          args: --output.text.path --output.text.print-linter-name --output.text.print-issued-lines --output.text.colors
+          version: v2.0
   test-linux:
     runs-on: ubuntu-latest
     steps:
