@@ -505,7 +505,8 @@ func discoverVIPsDualStack(namespace, ipv4Pool, ipv6Pool string, preferredIpv4Se
 		}
 	}
 
-	if *ipFamilyPolicy == v1.IPFamilyPolicyPreferDualStack {
+	switch *ipFamilyPolicy {
+	case v1.IPFamilyPolicyPreferDualStack:
 		if primaryPoolErr != nil && secondaryPoolErr != nil {
 			return "", fmt.Errorf("could not allocate any IP address for PreferDualStack service: %s", renderErrors(primaryPoolErr, secondaryPoolErr))
 		}
@@ -516,10 +517,12 @@ func discoverVIPsDualStack(namespace, ipv4Pool, ipv6Pool string, preferredIpv4Se
 		if singleError != nil {
 			klog.Warningf("PreferDualStack service will be single-stack because of error: %s", singleError)
 		}
-	} else if *ipFamilyPolicy == v1.IPFamilyPolicyRequireDualStack {
+	case v1.IPFamilyPolicyRequireDualStack:
 		if primaryPoolErr != nil || secondaryPoolErr != nil {
 			return "", fmt.Errorf("could not allocate required IP addresses for RequireDualStack service: %s", renderErrors(primaryPoolErr, secondaryPoolErr))
 		}
+	default:
+		// single stack, no op
 	}
 
 	return strings.Join(vipList, ","), nil

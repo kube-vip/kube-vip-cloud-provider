@@ -229,7 +229,7 @@ func (c *loadbalancerClassServiceController) addFinalizer(service *corev1.Servic
 
 	// Make a copy so we don't mutate the shared informer cache.
 	updated := service.DeepCopy()
-	updated.ObjectMeta.Finalizers = append(updated.ObjectMeta.Finalizers, servicehelper.LoadBalancerCleanupFinalizer)
+	updated.Finalizers = append(updated.Finalizers, servicehelper.LoadBalancerCleanupFinalizer)
 
 	klog.Infof("Adding finalizer to service %s/%s", updated.Namespace, updated.Name)
 	_, err := servicehelper.PatchService(c.kubeClient.CoreV1(), service, updated)
@@ -244,7 +244,7 @@ func (c *loadbalancerClassServiceController) removeFinalizer(service *corev1.Ser
 
 	// Make a copy so we don't mutate the shared informer cache.
 	updated := service.DeepCopy()
-	updated.ObjectMeta.Finalizers = removeString(updated.ObjectMeta.Finalizers, servicehelper.LoadBalancerCleanupFinalizer)
+	updated.Finalizers = removeString(updated.Finalizers, servicehelper.LoadBalancerCleanupFinalizer)
 
 	klog.Infof("Removing finalizer from service %s/%s", updated.Namespace, updated.Name)
 	_, err := servicehelper.PatchService(c.kubeClient.CoreV1(), service, updated)
@@ -337,7 +337,7 @@ func needsCleanup(service *corev1.Service) bool {
 		return false
 	}
 
-	if !service.ObjectMeta.DeletionTimestamp.IsZero() {
+	if !service.DeletionTimestamp.IsZero() {
 		return true
 	}
 

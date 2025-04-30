@@ -75,14 +75,14 @@ func TweakAddLBClass(loadBalancerClass *string) ServiceTweak {
 // TweakAddFinalizers returns a func that changes the Finalizers a service
 func TweakAddFinalizers(finalizers ...string) ServiceTweak {
 	return func(s *corev1.Service) {
-		s.ObjectMeta.Finalizers = finalizers
+		s.Finalizers = finalizers
 	}
 }
 
 // TweakAddDeletionTimestamp returns a func that changes the DeletionTimestamp a service
 func TweakAddDeletionTimestamp(time time.Time) ServiceTweak {
 	return func(s *corev1.Service) {
-		s.ObjectMeta.DeletionTimestamp = &metav1.Time{Time: time}
+		s.DeletionTimestamp = &metav1.Time{Time: time}
 	}
 }
 

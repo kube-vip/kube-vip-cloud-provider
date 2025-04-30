@@ -1,0 +1,18 @@
+run:
+  timeout: 10m
+
+linters:
+  enable:
+  - bodyclose
+  - gofmt
+  - goimports
+  - revive
+  - gosec
+  - misspell
+  - unconvert
+  - unparam
+
+linters-settings:
+  gosec:
+    excludes:
+      - G115 # G115: integer overflow conversion
