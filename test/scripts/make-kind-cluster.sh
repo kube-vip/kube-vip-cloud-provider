@@ -9,7 +9,7 @@ set -o nounset
 readonly KIND=${KIND:-kind}
 readonly KUBECTL=${KUBECTL:-kubectl}
 
-readonly NODEIMAGE=${NODEIMAGE:-"kindest/node:v1.29.2@sha256:51a1434a5397193442f0be2a297b488b6c919ce8a3931be0ce822606ea5ca245"}
+readonly NODEIMAGE=${NODEIMAGE:-"kindest/node:v1.33.0@sha256:02f73d6ae3f11ad5d543f16736a2cb2a63a300ad60e81dac22099b0b04784a4e"}
 readonly CLUSTERNAME=${CLUSTERNAME:-kvcp-e2e}
 readonly WAITTIME=${WAITTIME:-5m}
 
@@ -22,15 +22,15 @@ kind::cluster::exists() {
 
 kind::cluster::create() {
     ${KIND} create cluster \
-        --name "${CLUSTERNAME}" \
-        --image "${NODEIMAGE}" \
-        --wait "${WAITTIME}"
+    --name "${CLUSTERNAME}" \
+    --image "${NODEIMAGE}" \
+    --wait "${WAITTIME}"
 }
 
 kind::cluster::load() {
     ${KIND} load docker-image \
-        --name "${CLUSTERNAME}" \
-        "$@"
+    --name "${CLUSTERNAME}" \
+    "$@"
 }
 
 if kind::cluster::exists "$CLUSTERNAME" ; then
@@ -40,8 +40,8 @@ fi
 
 # Create a fresh kind cluster.
 if ! kind::cluster::exists "$CLUSTERNAME" ; then
-  kind::cluster::create
-
-  # Print the k8s version for verification.
-  ${KUBECTL} version
+    kind::cluster::create
+    
+    # Print the k8s version for verification.
+    ${KUBECTL} version
 fi
