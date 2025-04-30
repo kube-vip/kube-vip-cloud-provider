@@ -20,7 +20,7 @@ jobs:
         uses: golangci/golangci-lint-action@v7
         with:
           version: v2.1.5
-          args: --out-format=colored-line-number
+          args: --output.text.path --output.text.print-linter-name --output.text.print-issued-lines --output.text.colors
   test-linux:
     runs-on: ubuntu-latest
     steps:
