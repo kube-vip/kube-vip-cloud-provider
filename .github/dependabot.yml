@@ -10,7 +10,7 @@ updates:
   commit-message:
     prefix: ":seedling:"
   labels:
-    - "ok-to-test"
+    - "dependabot"
 # Main Go module
 - package-ecosystem: "gomod"
   directory: "/"
@@ -24,7 +24,7 @@ updates:
   commit-message:
     prefix: ":seedling:"
   labels:
-    - "ok-to-test"
+    - "dependabot"
 - package-ecosystem: docker
   directory: /
   schedule:
@@ -32,4 +32,4 @@ updates:
   commit-message:
     prefix: ":seedling:"
   labels:
-    - "ok-to-test"
+    - "dependabot"
