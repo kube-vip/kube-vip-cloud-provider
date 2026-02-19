@@ -7,7 +7,7 @@ toolchain go1.24.1
 require (
 	github.com/onsi/ginkgo/v2 v2.25.1
 	github.com/onsi/gomega v1.38.2
-	github.com/spf13/pflag v1.0.7
+	github.com/spf13/pflag v1.0.10
 	github.com/stretchr/testify v1.11.1
 	k8s.io/api v0.33.1
 	k8s.io/apimachinery v0.33.1
