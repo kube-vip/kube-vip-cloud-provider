@@ -7,14 +7,15 @@ import (
 	"testing"
 	"time"
 
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
-	"github.com/stretchr/testify/require"
-	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	"github.com/kube-vip/kube-vip-cloud-provider/pkg/config"
 	tu "github.com/kube-vip/kube-vip-cloud-provider/pkg/testutil"
 	"github.com/kube-vip/kube-vip-cloud-provider/test/e2e"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+	"github.com/stretchr/testify/require"
+	api_errors "k8s.io/apimachinery/pkg/api/errors"
+	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 )
 
 var f = e2e.NewFramework()
@@ -59,6 +60,15 @@ var _ = Describe("Descending IP Assignment", func() {
 				// but we excluded end IPs, so we expect one less than that
 				expectedIP := "192.168.0.222"
 				Expect(svc.Spec.LoadBalancerIP).To(Equal(expectedIP))
+
+				By("Cleaning up the service before the controller is killed")
+				err = f.Client.CoreV1().Services(svc.Namespace).Delete(context.TODO(), svc.Name, meta_v1.DeleteOptions{PropagationPolicy: ptr.To(meta_v1.DeletePropagationBackground)})
+				require.NoError(f.T(), err)
+
+				require.Eventually(f.T(), func() bool {
+					_, err := f.Client.CoreV1().Services(svc.Namespace).Get(context.TODO(), svc.Name, meta_v1.GetOptions{})
+					return api_errors.IsNotFound(err)
+				}, 30*time.Second, time.Second, "Service failed to delete (Finalizer stuck)")
 			})
 		}, "testing")
 	})
