@@ -15,6 +15,7 @@ readonly WAITTIME=${WAITTIME:-5m}
 
 readonly HERE=$(cd "$(dirname "$0")" && pwd)
 readonly REPO=$(cd "${HERE}/../.." && pwd)
+readonly CONFIGFILE=${CONFIGFILE:-"${HERE}/kind-config.yaml"}
 
 kind::cluster::exists() {
     ${KIND} get clusters | grep -q "$1"
@@ -22,6 +23,7 @@ kind::cluster::exists() {
 
 kind::cluster::create() {
     ${KIND} create cluster \
+    --config "${CONFIGFILE}" \
     --name "${CLUSTERNAME}" \
     --image "${NODEIMAGE}" \
     --wait "${WAITTIME}"
