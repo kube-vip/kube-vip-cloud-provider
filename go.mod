@@ -1,8 +1,6 @@
 module github.com/kube-vip/kube-vip-cloud-provider
 
-go 1.24.0
-
-toolchain go1.24.1
+go 1.26.4
 
 require (
 	github.com/onsi/ginkgo/v2 v2.25.1
