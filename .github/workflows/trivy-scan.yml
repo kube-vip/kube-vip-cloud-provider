@@ -24,7 +24,7 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ matrix.branch }}
-      - uses: aquasecurity/trivy-action@314ff8b43182423b84c50b1670b0e10f858f2d98 # 0.34.1
+      - uses: aquasecurity/trivy-action@d2a0b60797ff03db6132bd4e2b293f9b37081297 # 0.34.1
         with:
           scanners: vuln
           scan-type: 'fs'
