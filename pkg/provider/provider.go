@@ -123,7 +123,7 @@ func newKubeVipCloudProvider(io.Reader) (cloudprovider.Interface, error) {
 		}
 	}
 	return &KubeVipCloudProvider{
-		lb:            newLoadBalancer(cl, ns, cm, lbClass),
+		lb:            newLoadBalancer(cl, ns, cm, enableLBClass, lbClass),
 		kubeClient:    cl,
 		namespace:     ns,
 		configMapName: cm,

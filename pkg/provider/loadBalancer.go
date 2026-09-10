@@ -44,25 +44,27 @@ type kubevipLoadBalancerManager struct {
 	kubeClient        kubernetes.Interface
 	namespace         string
 	cloudConfigMap    string
+	enableLBClass     bool
 	loadbalancerClass string
 }
 
-func newLoadBalancer(kubeClient kubernetes.Interface, ns, cm string, lbClass string) cloudprovider.LoadBalancer {
+func newLoadBalancer(kubeClient kubernetes.Interface, ns, cm string, enableLBClass bool, lbClass string) cloudprovider.LoadBalancer {
 	k := &kubevipLoadBalancerManager{
 		kubeClient:        kubeClient,
 		namespace:         ns,
 		cloudConfigMap:    cm,
+		enableLBClass:     enableLBClass,
 		loadbalancerClass: lbClass,
 	}
 	return k
 }
 
 func (k *kubevipLoadBalancerManager) EnsureLoadBalancer(ctx context.Context, _ string, service *v1.Service, _ []*v1.Node) (lbs *v1.LoadBalancerStatus, err error) {
-	return syncLoadBalancer(ctx, k.kubeClient, service, k.cloudConfigMap, k.namespace)
+	return syncLoadBalancer(ctx, k.kubeClient, service, k.cloudConfigMap, k.namespace, k.enableLBClass, k.loadbalancerClass)
 }
 
 func (k *kubevipLoadBalancerManager) UpdateLoadBalancer(ctx context.Context, _ string, service *v1.Service, _ []*v1.Node) (err error) {
-	_, err = syncLoadBalancer(ctx, k.kubeClient, service, k.cloudConfigMap, k.namespace)
+	_, err = syncLoadBalancer(ctx, k.kubeClient, service, k.cloudConfigMap, k.namespace, k.enableLBClass, k.loadbalancerClass)
 	return err
 }
 
@@ -71,6 +73,10 @@ func (k *kubevipLoadBalancerManager) EnsureLoadBalancerDeleted(ctx context.Conte
 }
 
 func (k *kubevipLoadBalancerManager) GetLoadBalancer(_ context.Context, _ string, service *v1.Service) (status *v1.LoadBalancerStatus, exists bool, err error) {
+	if !matchLoadBalancerClass(service, k.enableLBClass, k.loadbalancerClass) {
+		return nil, false, nil
+	}
+
 	if service.Labels[ImplementationLabelKey] == ImplementationLabelValue {
 		return &service.Status.LoadBalancer, true, nil
 	}
@@ -91,6 +97,14 @@ func (k *kubevipLoadBalancerManager) deleteLoadBalancer(_ context.Context, servi
 	klog.Infof("deleting service '%s' (%s)", service.Name, service.UID)
 
 	return nil
+}
+
+func matchLoadBalancerClass(service *v1.Service, enableLBClass bool, lbClass string) bool {
+	if !enableLBClass {
+		return true
+	}
+
+	return service.Spec.LoadBalancerClass != nil && *service.Spec.LoadBalancerClass == lbClass
 }
 
 func checkLegacyLoadBalancerIPAnnotation(ctx context.Context, kubeClient kubernetes.Interface, service *v1.Service) (*v1.LoadBalancerStatus, error) {
@@ -194,15 +208,29 @@ func mapImplementedServices(svcs *v1.ServiceList, allowShare bool) (inUseSet *ne
 	return inUseSet, servicePortMap, nil
 }
 
-// syncLoadBalancer
+// syncLoadBalancer reconciles the load balancer state
 // 1. Is this loadBalancer already created, and does it have an address? return status
 // 2. Is this a new loadBalancer (with no IP address)
 // 2a. Get all existing kube-vip services
 // 2b. Get the network configuration for this service (namespace) / (CIDR/Range)
 // 2c. Between the two find a free address
 
-func syncLoadBalancer(ctx context.Context, kubeClient kubernetes.Interface, service *v1.Service, cmName, cmNamespace string) (*v1.LoadBalancerStatus, error) {
-	// This function reconciles the load balancer state
+func syncLoadBalancer(ctx context.Context, kubeClient kubernetes.Interface, service *v1.Service, cmName, cmNamespace string,
+	enableLBClass bool, lbClass string) (*v1.LoadBalancerStatus, error) {
+
+	if !matchLoadBalancerClass(service, enableLBClass, lbClass) {
+		var serviceClass string
+		if service.Spec.LoadBalancerClass != nil {
+			serviceClass = *service.Spec.LoadBalancerClass
+		} else {
+			serviceClass = "<nil>"
+		}
+		klog.V(4).Infof("skipping service %s/%s, service class %q doesn't match configured loadbalancerClass %q",
+			service.Namespace, service.Name, serviceClass, lbClass)
+
+		return &service.Status.LoadBalancer, nil
+	}
+
 	klog.Infof("syncing service '%s' (%s)", service.Name, service.UID)
 
 	// The loadBalancer address has already been populated

@@ -11,6 +11,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
+	"k8s.io/utils/ptr"
 )
 
 func Test_DiscoveryPoolCIDR(t *testing.T) {
@@ -714,6 +715,8 @@ func Test_syncLoadBalancer(t *testing.T) {
 		originalService v1.Service
 		poolConfigMap   *v1.ConfigMap
 		expectedService v1.Service
+		enableLBClass   bool
+		lbClass         string
 		wantErr         bool
 	}{
 		{
@@ -1020,6 +1023,85 @@ func Test_syncLoadBalancer(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "service with matching loadbalancerClass is reconciled",
+			originalService: v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test",
+					Name:      "name",
+				},
+				Spec: v1.ServiceSpec{
+					LoadBalancerClass: ptr.To(DefaultLoadbalancerClass),
+				},
+			},
+			poolConfigMap: &v1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      KubeVipClientConfig,
+					Namespace: KubeVipClientConfigNamespace,
+				},
+				Data: map[string]string{
+					"cidr-global": "192.168.1.1/24",
+				},
+			},
+			expectedService: v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test",
+					Name:      "name",
+					Labels: map[string]string{
+						"implementation": "kube-vip",
+					},
+					Annotations: map[string]string{
+						LoadbalancerIPsAnnotation: "192.168.1.1",
+					},
+				},
+				Spec: v1.ServiceSpec{
+					LoadBalancerClass: ptr.To(DefaultLoadbalancerClass),
+					LoadBalancerIP:    "192.168.1.1",
+				},
+			},
+			enableLBClass: true,
+			lbClass:       DefaultLoadbalancerClass,
+		},
+		{
+			name: "service with different loadbalancerClass is ignored",
+			originalService: v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test",
+					Name:      "name",
+				},
+				Spec: v1.ServiceSpec{
+					LoadBalancerClass: ptr.To("custom-class"),
+				},
+			},
+			expectedService: v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test",
+					Name:      "name",
+				},
+				Spec: v1.ServiceSpec{
+					LoadBalancerClass: ptr.To("custom-class"),
+				},
+			},
+			enableLBClass: true,
+			lbClass:       DefaultLoadbalancerClass,
+		},
+		{
+			name: "classless service is ignored when loadbalancerClass is enabled",
+			originalService: v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test",
+					Name:      "name",
+				},
+			},
+			expectedService: v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test",
+					Name:      "name",
+				},
+			},
+			enableLBClass: true,
+			lbClass:       DefaultLoadbalancerClass,
+		},
 	}
 
 	for _, tt := range tests {
@@ -1051,7 +1133,7 @@ func Test_syncLoadBalancer(t *testing.T) {
 				}
 			}
 
-			_, err = syncLoadBalancer(context.Background(), mgr.kubeClient, &tt.originalService, cm, ns) // #nosec G601
+			_, err = syncLoadBalancer(context.Background(), mgr.kubeClient, &tt.originalService, cm, ns, tt.enableLBClass, tt.lbClass) // #nosec G601
 			if err != nil {
 				t.Error(err)
 			}
