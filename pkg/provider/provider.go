@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
@@ -45,6 +46,12 @@ const (
 	// EnableLoadbalancerClassEnvKey environment key for enabling loadbalancerclass.
 	// This should be enabled if CustomLoadbalancerClassNameEnvKey is not empty
 	EnableLoadbalancerClassEnvKey = "KUBEVIP_ENABLE_LOADBALANCERCLASS"
+
+	// serviceSyncPeriod is how often the shared informer resyncs Services, matching the
+	// periodic resync used by the upstream k8s.io/cloud-provider generic service controller.
+	// Without it, a missed or delayed event for the loadbalancerClass service controller
+	// has no fallback trigger to re-process the object.
+	serviceSyncPeriod = 30 * time.Second
 )
 
 func init() {
@@ -137,7 +144,7 @@ func (p *KubeVipCloudProvider) Initialize(clientBuilder cloudprovider.Controller
 	klog.Info("Initing Kube-vip Cloud Provider")
 
 	clientset := clientBuilder.ClientOrDie("do-shared-informers")
-	sharedInformer := informers.NewSharedInformerFactory(clientset, 0)
+	sharedInformer := informers.NewSharedInformerFactory(clientset, serviceSyncPeriod)
 
 	if p.enableLBClass {
 		klog.Info("starting a separate service controller that only monitors service with loadbalancerClass")
