@@ -101,7 +101,7 @@ func (f *Framework) NamespacedTest(namespace string, body NamespacedTestBody, ad
 		})
 		ginkgo.AfterEach(func() {
 			for _, ns := range append(additionalNamespaces, namespace) {
-				f.DeleteNamespace(ns, false)
+				f.DeleteNamespace(ns, true)
 			}
 		})
 
