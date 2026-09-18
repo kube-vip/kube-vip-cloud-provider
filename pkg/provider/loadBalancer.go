@@ -611,7 +611,7 @@ func renderErrors(errs ...error) string {
 	s := strings.Builder{}
 	for _, err := range errs {
 		if err != nil {
-			s.WriteString(fmt.Sprintf("\n\t- %s", err))
+			fmt.Fprintf(&s, "\n\t- %s", err)
 		}
 	}
 	return s.String()

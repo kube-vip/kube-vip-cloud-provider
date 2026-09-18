@@ -1,14 +1,13 @@
 module github.com/kube-vip/kube-vip-cloud-provider
 
-go 1.24.0
-
-toolchain go1.24.1
+go 1.27.1
 
 require (
 	github.com/onsi/ginkgo/v2 v2.25.1
 	github.com/onsi/gomega v1.41.0
 	github.com/spf13/pflag v1.0.10
 	github.com/stretchr/testify v1.11.1
+	go4.org/netipx v0.0.0-20231129151722-fdeea329fbba
 	k8s.io/api v0.33.1
 	k8s.io/apimachinery v0.33.1
 	k8s.io/client-go v0.33.1
@@ -89,6 +88,7 @@ require (
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/crypto v0.47.0 // indirect
 	golang.org/x/exp v0.0.0-20240719175910-8a7402abbf56 // indirect
+	golang.org/x/net v0.49.0 // indirect
 	golang.org/x/oauth2 v0.27.0 // indirect
 	golang.org/x/sync v0.19.0 // indirect
 	golang.org/x/sys v0.40.0 // indirect
@@ -114,9 +114,4 @@ require (
 	sigs.k8s.io/randfill v1.0.0 // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.6.0 // indirect
 	sigs.k8s.io/yaml v1.4.0 // indirect
-)
-
-require (
-	go4.org/netipx v0.0.0-20231129151722-fdeea329fbba
-	golang.org/x/net v0.49.0 // indirect
 )
