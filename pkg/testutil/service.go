@@ -37,7 +37,7 @@ func TweakNamespace(ns string) ServiceTweak {
 }
 
 // TweakAddETP returns a func that changes the ExternalTrafficPolicyType of a service
-func TweakAddETP(etpType corev1.ServiceExternalTrafficPolicyType) ServiceTweak {
+func TweakAddETP(etpType corev1.ServiceExternalTrafficPolicy) ServiceTweak {
 	return func(s *corev1.Service) {
 		s.Spec.ExternalTrafficPolicy = etpType
 	}
