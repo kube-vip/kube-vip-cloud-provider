@@ -211,7 +211,7 @@ func (c *loadbalancerClassServiceController) processServiceCreateOrUpdate(svc *c
 		return err
 	}
 
-	if _, err := syncLoadBalancer(context.Background(), c.kubeClient, svc, c.cmName, c.cmNamespace); err != nil {
+	if _, err := syncLoadBalancer(context.Background(), c.kubeClient, svc, c.cmName, c.cmNamespace, true, c.lbClass); err != nil {
 		c.recorder.Eventf(svc, corev1.EventTypeWarning, "syncLoadBalancer", "Error syncing load balancer: %v", err)
 		return err
 	}
