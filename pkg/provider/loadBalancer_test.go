@@ -1,4 +1,5 @@
 package provider
+
 import (
 	"context"
 	"net/netip"
@@ -10,8 +11,8 @@ import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
-	"k8s.io/utils/set"
 	"k8s.io/utils/ptr"
+	"k8s.io/utils/set"
 )
 
 func Test_DiscoveryPoolCIDR(t *testing.T) {
