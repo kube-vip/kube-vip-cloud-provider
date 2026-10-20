@@ -12,6 +12,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/utils/ptr"
+	"k8s.io/utils/set"
 )
 
 func Test_DiscoveryPoolCIDR(t *testing.T) {
@@ -1149,6 +1150,85 @@ func Test_syncLoadBalancer(t *testing.T) {
 			}
 
 			assert.EqualValues(t, tt.expectedService, *resService)
+		})
+	}
+}
+
+func Test_discoverSharedVIPs(t *testing.T) {
+	service := &v1.Service{
+		Spec: v1.ServiceSpec{
+			Ports: []v1.ServicePort{{Port: 443}},
+		},
+	}
+
+	tests := []struct {
+		name         string
+		pool         string
+		existingVIPs []string
+		existingPort int32
+		want         string
+	}{
+		{
+			name:         "CIDR outside pool",
+			pool:         "10.0.0.0/24",
+			existingVIPs: []string{"10.0.1.100"},
+			existingPort: 80,
+			want:         "",
+		},
+		{
+			name:         "CIDR inside pool",
+			pool:         "10.0.0.0/24",
+			existingVIPs: []string{"10.0.1.100", "10.0.0.100"},
+			existingPort: 80,
+			want:         "10.0.0.100",
+		},
+		{
+			name:         "multiple CIDRs",
+			pool:         "10.0.0.0/24,10.0.1.0/24",
+			existingVIPs: []string{"10.0.1.100"},
+			existingPort: 80,
+			want:         "10.0.1.100",
+		},
+		{
+			name:         "range outside pool",
+			pool:         "10.0.0.10-10.0.0.20",
+			existingVIPs: []string{"10.0.0.30"},
+			existingPort: 80,
+			want:         "",
+		},
+		{
+			name:         "range inside pool",
+			pool:         "10.0.0.10-10.0.0.20",
+			existingVIPs: []string{"10.0.0.30", "10.0.0.15"},
+			existingPort: 80,
+			want:         "10.0.0.15",
+		},
+		{
+			name:         "port conflict",
+			pool:         "10.0.0.0/24",
+			existingVIPs: []string{"10.0.0.100"},
+			existingPort: 443,
+			want:         "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			used := make(map[string]*set.Set[int32], len(tt.existingVIPs))
+			for _, ip := range tt.existingVIPs {
+				ports := set.New[int32](tt.existingPort)
+				used[ip] = &ports
+			}
+
+			gotString, err := discoverSharedVIPs(service, used, tt.pool)
+			if err != nil {
+				t.Errorf("discoverSharedVIPs() error: %v, expected: nil", err)
+				return
+			}
+
+			if gotString != tt.want {
+				t.Errorf("discoverSharedVIPs() returned: %s, expected: %s", gotString, tt.want)
+			}
 		})
 	}
 }

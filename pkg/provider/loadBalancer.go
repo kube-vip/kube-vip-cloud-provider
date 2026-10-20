@@ -303,7 +303,10 @@ func syncLoadBalancer(ctx context.Context, kubeClient kubernetes.Interface, serv
 	preferredIpv4ServiceIP := ""
 
 	if allowShare {
-		preferredIpv4ServiceIP = discoverSharedVIPs(service, servicePortMap)
+		preferredIpv4ServiceIP, err = discoverSharedVIPs(service, servicePortMap, pool)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// If allowedShare is true but no IP could be shared, or allowedShare is false, switch to use IPAM lookup
@@ -424,13 +427,27 @@ func discoverPool(cm *v1.ConfigMap, namespace, configMapName string) (pool strin
 //		if found: assign this IP and return. Services without a Ports account for the whole IP
 //		if not: find new free IP from Range and assign it
 
-func discoverSharedVIPs(service *v1.Service, servicePortMap map[string]*set.Set[int32]) (vips string) {
+func discoverSharedVIPs(service *v1.Service, servicePortMap map[string]*set.Set[int32], pool string) (vips string, err error) {
+	allowedIPs, err := getIPSetFromPool(pool)
+	if err != nil {
+		return "", err
+	}
+
 	servicePorts := set.New[int32]()
 	for p := range service.Spec.Ports {
 		servicePorts.Insert(service.Spec.Ports[p].Port)
 	}
 
 	for ip := range servicePortMap {
+		// Do not reuse an existing VIP outside the current CCM's configured pool
+		addr, err := netip.ParseAddr(ip)
+		if err != nil {
+			return "", fmt.Errorf("invalid shared VIP %q: %w", ip, err)
+		}
+		if !allowedIPs.Contains(addr) {
+			continue
+		}
+
 		portSet := *servicePortMap[ip]
 		if portSet.Has(0) {
 			continue
@@ -445,11 +462,35 @@ func discoverSharedVIPs(service *v1.Service, servicePortMap map[string]*set.Set[
 				fmt.Sprint(portSet.SortedList()),
 			)
 			// All requested ports are free on this IP
-			return ip
+			return ip, nil
 		}
 	}
 
-	return ""
+	return "", nil
+}
+
+func getIPSetFromPool(pool string) (*netipx.IPSet, error) {
+	var builder netipx.IPSetBuilder
+
+	for _, entry := range strings.Split(pool, ",") {
+		entry = strings.TrimSpace(entry)
+
+		if strings.Contains(entry, "/") {
+			prefix, err := netip.ParsePrefix(entry)
+			if err != nil {
+				return nil, err
+			}
+			builder.AddPrefix(prefix)
+		} else {
+			ipRange, err := netipx.ParseIPRange(entry)
+			if err != nil {
+				return nil, err
+			}
+			builder.AddRange(ipRange)
+		}
+	}
+
+	return builder.IPSet()
 }
 
 func discoverVIPsSingleStack(namespace, ipv4Pool, ipv6Pool string, preferredIpv4ServiceIP string, inUseIPSet *netipx.IPSet, kubevipLBConfig *config.KubevipLBConfig,
